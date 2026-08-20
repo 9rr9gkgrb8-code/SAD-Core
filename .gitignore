@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+failures.json
+.sad_sandbox/
+settings.json
+private/
+.env
