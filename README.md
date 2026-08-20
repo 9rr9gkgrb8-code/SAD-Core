@@ -37,9 +37,6 @@ copy. Do not commit the `private` folder.
 - `1` — Warm
 - `2` — Playful
 
-Adult Mode is a separate session-only local add-on. It stays in `private/` and
-is not part of SAD's public core or a visible dialogue level.
-
 ## Useful commands
 
 - `help` — show all commands
