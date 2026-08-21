@@ -1,4 +1,4 @@
-"""Optional connection to a private local language model.
+"""Optional connection to a local language model.
 
 SAD keeps using its built-in conversation layer unless a local model is both
 configured and explicitly enabled during a session.
@@ -16,7 +16,7 @@ LOCAL_MODEL_URL = os.getenv("SAD_LOCAL_MODEL_URL", "http://127.0.0.1:11434")
 LOCAL_MODEL_NAME = os.getenv("SAD_LOCAL_MODEL", "")
 
 
-def build_system_prompt(user_name, adult_mode=False):
+def build_system_prompt(user_name):
     name = user_name or "the user"
     prompt = (
         "You are Sasha, a local dialogue assistant. "
@@ -25,10 +25,6 @@ def build_system_prompt(user_name, adult_mode=False):
         "has explicitly asked and the application confirms it."
     )
     prompt = f"{prompt}\n\n{build_sasha_voice(user_name)}"
-    if adult_mode:
-        from private.adult_mode import adult_mode_rules
-
-        prompt = f"{prompt}\n\n{adult_mode_rules()}"
     return prompt
 
 
@@ -49,7 +45,7 @@ def local_model_is_available():
         return False
 
 
-def generate_local_response(message, user_name, history, adult_mode=False):
+def generate_local_response(message, user_name, history):
     """Generate a reply locally, returning None when the local service is unavailable."""
     if not local_model_is_available():
         return None
@@ -58,7 +54,7 @@ def generate_local_response(message, user_name, history, adult_mode=False):
         f"{speaker}: {text}" for speaker, text in history[-6:]
     )
     prompt = (
-        f"{build_system_prompt(user_name, adult_mode)}\n\n"
+        f"{build_system_prompt(user_name)}\n\n"
         f"Recent conversation:\n{prompt_history}\n"
         f"User: {message}\nSasha:"
     )

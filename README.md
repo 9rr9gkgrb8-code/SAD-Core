@@ -17,19 +17,19 @@ The repair engine follows this sequence:
 
 SAD does not apply changes to its live files automatically.
 
-## Private Local Data
+## Local Data
 
 The following stay on the computer and are ignored by Git:
 
 - `settings.json` — saved name and dialogue level
 - `failures.json` — local failure reports
 - `.sad_sandbox/` — isolated drafts and exported patches
-- `private/` — optional personal preferences, memory notes, and private add-ons
+- `local_data/` — optional preferences and memory notes
 - `.env` — local environment values, such as a model configuration
 
-To create a private profile, make a `private` folder, copy
-`private_profile.example.json` into it as `profile.json`, and edit your local
-copy. Do not commit the `private` folder.
+To create local preferences, make a `local_data` folder, copy
+`local_preferences.example.json` into it as `preferences.json`, and edit your
+local copy. Do not commit the `local_data` folder.
 
 ## Visible dialogue levels
 

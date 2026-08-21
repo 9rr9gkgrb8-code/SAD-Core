@@ -3,5 +3,5 @@ __pycache__/
 failures.json
 .sad_sandbox/
 settings.json
-private/
+local_data/
 .env

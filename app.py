@@ -22,7 +22,7 @@ from model_adapter import (
     local_model_is_available,
     local_model_is_configured,
 )
-from private_profile import private_profile_is_configured
+from local_preferences import local_preferences_are_configured
 from settings import LEVEL_NAMES, load_settings, save_settings
 from evaluator import (
     approve_failure,
@@ -33,15 +33,6 @@ from evaluator import (
     load_failure_records,
     report_failure,
 )
-
-try:
-    from private.adult_guardrails import evaluate_adult_message
-    from private.adult_mode import can_activate_adult_mode
-
-    ADULT_MODE_AVAILABLE = True
-except ModuleNotFoundError:
-    ADULT_MODE_AVAILABLE = False
-
 
 def ask_yes_or_no(question):
     while True:
@@ -97,7 +88,6 @@ def chat(level, settings, show_intro=True):
     previous_response = None
     conversation_history = []
     use_local_model = False
-    adult_mode = False
 
     while True:
         message = input("You: ").strip()
@@ -120,7 +110,7 @@ def chat(level, settings, show_intro=True):
             print("  level 0-2         - Change directly to that level")
             print("  name              - Show your saved name")
             print("  rename            - Change your saved name")
-            print("  profile status    - Check whether your private local profile is set up")
+            print("  preferences status - Check whether local preferences are set up")
             print("  report failure    - Record a mistake for review")
             print("  review failures   - Show recent failure reports")
             print("  repair status     - Group failure patterns for human review")
@@ -136,9 +126,6 @@ def chat(level, settings, show_intro=True):
             print("  model status      - Check whether a local model is ready")
             print("  local model on    - Use the local model for this session")
             print("  local model off   - Return to Sasha's built-in conversation layer")
-            if ADULT_MODE_AVAILABLE:
-                print("  adult mode on     - Enable the local private 18+ add-on")
-                print("  adult mode off    - Return to standard conversation mode")
             print("  quit              - End the conversation\n")
             continue
 
@@ -227,11 +214,11 @@ def chat(level, settings, show_intro=True):
             print()
             continue
 
-        if command == "profile status":
-            if private_profile_is_configured():
-                print("Sasha: Your private profile is configured locally and is not part of GitHub.\n")
+        if command in ["preferences status", "profile status"]:
+            if local_preferences_are_configured():
+                print("Sasha: Your local preferences are configured.\n")
             else:
-                print("Sasha: No private profile is configured yet. The public example is private_profile.example.json.\n")
+                print("Sasha: No local preferences are configured yet. See local_preferences.example.json.\n")
             continue
 
         if command == "repair status":
@@ -461,49 +448,10 @@ def chat(level, settings, show_intro=True):
             print("Sasha: Built-in conversation mode is on.\n")
             continue
 
-        if command == "adult mode on":
-            if not ADULT_MODE_AVAILABLE:
-                print("Sasha: Adult Mode is a local private add-on and is not installed here.\n")
-                continue
-
-            if not use_local_model:
-                print("Sasha: Adult Mode requires Local Model Mode to be on first.\n")
-                continue
-
-            is_adult = ask_yes_or_no("Are you 18 or older? (y/n): ")
-            agrees_to_consent = ask_yes_or_no(
-                "Do you agree this mode is for consenting adults only? (y/n): "
-            )
-
-            if can_activate_adult_mode(is_adult, agrees_to_consent):
-                adult_mode = True
-                previous_topic = None
-                previous_detail = None
-                previous_response = None
-                conversation_history = []
-                print("Sasha: Adult Mode is on for this session.\n")
-            else:
-                print("Sasha: Adult Mode remains off.\n")
-            continue
-
-        if command == "adult mode off":
-            adult_mode = False
-            previous_topic = None
-            previous_detail = None
-            previous_response = None
-            conversation_history = []
-            print("Sasha: Standard conversation mode is on.\n")
-            continue
-
         response = None
         if use_local_model:
-            if adult_mode:
-                allowed, guardrail_message = evaluate_adult_message(message)
-                if not allowed:
-                    print(f"Sasha: {guardrail_message}")
-                    continue
             response = generate_local_response(
-                message, settings["user_name"], conversation_history, adult_mode
+                message, settings["user_name"], conversation_history
             )
 
         if response is None:

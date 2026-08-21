@@ -26,7 +26,7 @@ REPAIR_PLAN_TEMPLATES = {
         "plan": "Review the repeated conversation examples and draft one focused response improvement in an isolated sandbox.",
     },
     "safety_guardrails": {
-        "target_areas": ["adult_guardrails.py", "adult_mode.py"],
+        "target_areas": ["app.py", "personality.py"],
         "plan": "Review the applicable safety boundary and its tests before drafting any sandbox-only change.",
     },
     "general": {
@@ -43,7 +43,7 @@ def categorize_failure(exact_failure):
     if any(phrase in text for phrase in ["local model", "ollama", "model not"]):
         return "local_model"
 
-    if any(phrase in text for phrase in ["adult", "consent", "minor", "guardrail", "safety"]):
+    if any(phrase in text for phrase in ["guardrail", "safety", "unsafe"]):
         return "safety_guardrails"
 
     if any(phrase in text for phrase in ["wrong answer", "conversation", "response", "repeat", "context"]):

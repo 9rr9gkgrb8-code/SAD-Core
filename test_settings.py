@@ -18,7 +18,7 @@ class SettingsTests(unittest.TestCase):
         settings.SETTINGS_FILE = self.original_settings_file
         self.temp_directory.cleanup()
 
-    def test_spicy_is_not_a_visible_dialogue_level(self):
+    def test_invalid_level_is_reset_to_default(self):
         Path(settings.SETTINGS_FILE).write_text(
             json.dumps({"level": 3, "user_name": "Ken"}),
             encoding="utf-8",
