@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import threading
 
 from api import SadApiService, create_server
@@ -17,7 +18,7 @@ def build_shared_service():
     auth = AuthService()
     access = MobileAccessStore()
     dashboard = FailureDashboard(auth)
-    progress = ProgressStore()
+    progress = ProgressStore(Path(__file__).with_name("student_progress.json"))
     return SadApiService(auth=auth, dashboard=dashboard, progress=progress, mobile_access=access), access
 
 
