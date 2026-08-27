@@ -28,6 +28,13 @@ Updated: August 27, 2026
 - Local per-user authentication uses salted PBKDF2 hashes, expiring sessions,
   lockout, owner-controlled privileged account creation and no shared credential.
 - GitHub CI compiles the project and runs the full test/contract/security suite.
+- The Alpha release gate is tested and enforced by CI; it verifies required release
+  surfaces and blocks retired private-mode implementation markers from returning to
+  the current release tree.
+- A PR-triggered GitHub Actions verification run completed successfully with compile,
+  full unit suite and Alpha release gate all green on August 27, 2026.
+- Alpha operator preflight reports core readiness separately from optional local-model
+  configuration and Docker-backed repair-isolation readiness.
 - Alpha 1 browser UI provides separate role-filtered Personal Study, Forge Student,
   teacher roster, Owner/Dev dashboard, account control, and security surfaces.
 - Personal Study can generate full output through the explicitly configured
@@ -48,10 +55,11 @@ Updated: August 27, 2026
 - Sessions are intentionally memory-only and require login again after API restart.
 - Internet hosting remains deliberately unsupported for Alpha 1: TLS, hosted
   secrets, email recovery, and external identity are future-beta work.
-- Run and inspect the first GitHub Actions CI result after this commit is pushed.
 
 ## Verification gate
 
-Run `python -m unittest -v`, `python -m compileall -q .`, and Protocol White. A
-release is blocked if any test fails, the worktree is dirty unexpectedly, container
-isolation is unavailable for an actual repair, or live/Git integrity evidence fails.
+Run `python -m unittest -v`, `python -m compileall -q .`, `python release_gate.py`,
+`python alpha_doctor.py`, and Protocol White. A release is blocked if any core test
+fails, the worktree is dirty unexpectedly, the release-integrity gate fails,
+container isolation is unavailable for an actual repair, or live/Git integrity
+evidence fails.
