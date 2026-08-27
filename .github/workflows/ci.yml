@@ -24,3 +24,25 @@ jobs:
         run: python release_gate.py
       - name: Alpha operator preflight
         run: python alpha_doctor.py
+
+  docker-proof:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Preload and pin reviewed Python image
+        shell: bash
+        run: |
+          docker pull python:3.11-slim
+          IMAGE="$(docker image inspect python:3.11-slim --format '{{index .RepoDigests 0}}')"
+          test -n "$IMAGE"
+          echo "SAD_SANDBOX_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "Pinned sandbox image: $IMAGE"
+      - name: Alpha preflight with Docker
+        run: python alpha_doctor.py
+      - name: Docker isolation proof
+        run: python docker_proof.py
