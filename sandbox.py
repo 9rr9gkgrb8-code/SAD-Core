@@ -19,6 +19,7 @@ PROTECTED_GIT_PATHS = (
     "HEAD", "config", "commondir", "config.worktree", "hooks", "modules"
 )
 GIT_CREDENTIAL_ENVIRONMENT = {"GITHUB_TOKEN", "GH_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK"}
+SAFE_WORKER_ENVIRONMENT = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "LANG", "LC_ALL", "PYTHONUTF8"}
 
 
 def validate_sandbox_path(path, must_exist=True):
@@ -28,6 +29,22 @@ def validate_sandbox_path(path, must_exist=True):
     if candidate == root or not candidate.is_relative_to(root):
         raise ValueError("The path must identify a proposal inside SAD's sandbox directory.")
     return candidate
+
+
+def _validated_proposal_id(proposal_id):
+    try:
+        return str(uuid.UUID(str(proposal_id)))
+    except (ValueError, AttributeError, TypeError) as error:
+        raise ValueError("Proposal ID must be a valid UUID.") from error
+
+
+def _validated_target_path(sandbox_path, target_file):
+    if target_file not in ALLOWED_TARGET_FILES:
+        raise ValueError("The target file is not approved for sandbox proposals.")
+    target = sandbox_path / target_file
+    if target.is_symlink() or not target.is_file() or target.resolve() != target.absolute():
+        raise ValueError("The sandbox target must be a regular file directly inside the proposal.")
+    return target
 
 
 def _hash_file(path):
@@ -98,9 +115,8 @@ def sandbox_has_host_only_git_authority(sandbox_path, environment=None):
 
 def build_worker_environment(environment=None):
     """Return a worker environment with Git credentials explicitly removed."""
-    clean = dict(os.environ if environment is None else environment)
-    for name in GIT_CREDENTIAL_ENVIRONMENT:
-        clean.pop(name, None)
+    source = os.environ if environment is None else environment
+    clean = {name: value for name, value in source.items() if name.upper() in SAFE_WORKER_ENVIRONMENT}
     clean["GIT_TERMINAL_PROMPT"] = "0"
     return clean
 
@@ -132,6 +148,7 @@ def create_sandbox_proposal(failure_id, target_file, proposal_summary):
         "target_file": target_file,
         "proposal_summary": proposal_summary,
         "status": "sandbox_created",
+        "base_target_sha256": _hash_file(PROJECT_DIRECTORY / target_file),
     }
 
     with (sandbox_path / "proposal.json").open("w", encoding="utf-8") as file:
@@ -194,10 +211,7 @@ def create_draft_patch(sandbox_path, target_file, find_text, replacement_text):
     """Edit one approved file only inside a sandbox and save a reviewable diff."""
     sandbox_path = validate_sandbox_path(sandbox_path)
 
-    if target_file not in ALLOWED_TARGET_FILES:
-        raise ValueError("The target file is not approved for sandbox proposals.")
-
-    target_path = sandbox_path / target_file
+    target_path = _validated_target_path(sandbox_path, target_file)
     original = target_path.read_text(encoding="utf-8")
     if not find_text or find_text not in original:
         raise ValueError("The requested original text was not found in the sandbox file.")
@@ -219,6 +233,7 @@ def create_draft_patch(sandbox_path, target_file, find_text, replacement_text):
 
 def get_sandbox_proposal(proposal_id):
     """Return one saved sandbox proposal and its draft diff for human review."""
+    proposal_id = _validated_proposal_id(proposal_id)
     sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / proposal_id, must_exist=False)
 
     proposal_path = sandbox_path / "proposal.json"
@@ -226,7 +241,20 @@ def get_sandbox_proposal(proposal_id):
         raise ValueError("That sandbox proposal was not found.")
 
     proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
+    if proposal.get("proposal_id") != proposal_id:
+        raise ValueError("Proposal identity does not match its directory.")
+    _validated_target_path(sandbox_path, proposal.get("target_file"))
     return proposal, proposal.get("draft_diff", "")
+
+
+def _validate_patch_scope(diff, target_file):
+    """Allow a text patch for exactly one approved repository-root file."""
+    if not isinstance(diff, str) or "GIT binary patch" in diff or "\0" in diff:
+        raise ValueError("Only a text patch is allowed.")
+    old_headers = [line for line in diff.splitlines() if line.startswith("--- ")]
+    new_headers = [line for line in diff.splitlines() if line.startswith("+++ ")]
+    if old_headers != [f"--- original/{target_file}"] or new_headers != [f"+++ proposed/{target_file}"]:
+        raise ValueError("The patch must modify exactly its approved target file.")
 
 
 def approve_sandbox_proposal(proposal_id):
@@ -235,7 +263,8 @@ def approve_sandbox_proposal(proposal_id):
     if proposal.get("status") != "sandbox_tests_passed":
         return None
 
-    sandbox_path = (SANDBOX_DIRECTORY.resolve() / proposal_id).resolve()
+    _validate_patch_scope(proposal.get("draft_diff", ""), proposal["target_file"])
+    sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / _validated_proposal_id(proposal_id))
     proposal_path = sandbox_path / "proposal.json"
     proposal["status"] = "draft_approved_by_human"
     proposal["approved_at"] = datetime.now().isoformat(timespec="seconds")
@@ -252,6 +281,7 @@ def export_approved_patch(proposal_id):
         raise ValueError("That sandbox proposal has no draft diff to export.")
 
     target_file = proposal["target_file"]
+    _validate_patch_scope(diff, target_file)
     exported_diff = diff.replace(
         f"--- original/{target_file}",
         f"--- a/{target_file}",
@@ -264,7 +294,7 @@ def export_approved_patch(proposal_id):
     if exported_diff == diff:
         raise ValueError("The sandbox draft has an unexpected patch format.")
 
-    sandbox_path = (SANDBOX_DIRECTORY.resolve() / proposal_id).resolve()
+    sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / _validated_proposal_id(proposal_id))
     exported_path = sandbox_path / "approved.patch"
     exported_path.write_text(exported_diff, encoding="utf-8")
     return exported_path
@@ -273,17 +303,21 @@ def export_approved_patch(proposal_id):
 def validate_approved_patch(proposal_id):
     """Check an approved patch against live files without applying anything."""
     exported_path = export_approved_patch(proposal_id)
-    result = subprocess.run(
-        ["git", "apply", "--check", str(exported_path)],
-        cwd=PROJECT_DIRECTORY,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
+    proposal, diff = get_sandbox_proposal(proposal_id)
+    target_file = proposal["target_file"]
+    _validate_patch_scope(diff, target_file)
+    live_target = PROJECT_DIRECTORY / target_file
+    expected_hash = proposal.get("base_target_sha256")
+    is_valid = bool(expected_hash) and live_target.is_file() and not live_target.is_symlink() and hmac_compare_hash(_hash_file(live_target), expected_hash)
     return {
         "proposal_id": proposal_id,
         "patch_path": exported_path,
-        "is_valid": result.returncode == 0,
-        "details": result.stdout + result.stderr,
+        "is_valid": is_valid,
+        "details": "" if is_valid else "The live target no longer matches the proposal's recorded source hash.",
     }
+
+
+def hmac_compare_hash(actual, expected):
+    """Constant-time comparison keeps integrity checks uniform."""
+    import hmac
+    return hmac.compare_digest(actual, expected)

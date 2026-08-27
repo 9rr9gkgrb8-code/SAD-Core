@@ -45,10 +45,19 @@ class SandboxHardeningTests(unittest.TestCase):
         self.assertEqual([e["sequence"] for e in result["ordered_evidence"]], list(range(1, 8)))
 
     def test_worker_environment_strips_git_credentials(self):
-        clean = sandbox.build_worker_environment({"GH_TOKEN": "secret", "SAFE": "yes"})
+        clean = sandbox.build_worker_environment({"GH_TOKEN": "secret", "AWS_SECRET_ACCESS_KEY": "secret", "PATH": "safe"})
         self.assertNotIn("GH_TOKEN", clean)
-        self.assertEqual(clean["SAFE"], "yes")
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", clean)
+        self.assertEqual(clean["PATH"], "safe")
         self.assertEqual(clean["GIT_TERMINAL_PROMPT"], "0")
+
+    def test_proposal_id_and_patch_scope_reject_traversal_or_extra_files(self):
+        with self.assertRaises(ValueError):
+            sandbox._validated_proposal_id("../outside")
+        with self.assertRaises(ValueError):
+            sandbox._validate_patch_scope("--- original/app.py\n+++ proposed/settings.py\n", "app.py")
+        with self.assertRaises(ValueError):
+            sandbox._validate_patch_scope("GIT binary patch", "app.py")
 
 
 if __name__ == "__main__":

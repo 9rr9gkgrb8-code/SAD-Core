@@ -8,12 +8,28 @@ import json
 import os
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 from sasha_voice import build_sasha_voice
 
 
 LOCAL_MODEL_URL = os.getenv("SAD_LOCAL_MODEL_URL", "http://127.0.0.1:11434")
 LOCAL_MODEL_NAME = os.getenv("SAD_LOCAL_MODEL", "")
+MAX_MODEL_RESPONSE_BYTES = 2_000_000
+MAX_PROMPT_CHARACTERS = 1_000_000
+
+
+def validated_local_model_url(url=None):
+    """Allow conversation data to be sent only to a loopback HTTP endpoint."""
+    value = (url or LOCAL_MODEL_URL).rstrip("/")
+    parsed = urlparse(value)
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("The local model URL must use HTTP on the loopback interface.")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
+        raise ValueError("The local model URL cannot contain credentials, a path, query, or fragment.")
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise ValueError("The local model URL has an invalid port.")
+    return value
 
 
 def build_system_prompt(user_name):
@@ -39,9 +55,10 @@ def local_model_is_available():
         return False
 
     try:
-        with urlopen(f"{LOCAL_MODEL_URL}/api/tags", timeout=1) as response:
+        base_url = validated_local_model_url()
+        with urlopen(f"{base_url}/api/tags", timeout=1) as response:
             return response.status == 200
-    except (OSError, URLError):
+    except (OSError, URLError, ValueError):
         return False
 
 
@@ -58,11 +75,17 @@ def generate_local_response(message, user_name, history):
         f"Recent conversation:\n{prompt_history}\n"
         f"User: {message}\nSasha:"
     )
+    if len(prompt) > MAX_PROMPT_CHARACTERS:
+        return None
     payload = json.dumps(
         {"model": LOCAL_MODEL_NAME, "prompt": prompt, "stream": False}
     ).encode("utf-8")
+    try:
+        base_url = validated_local_model_url()
+    except ValueError:
+        return None
     request = Request(
-        f"{LOCAL_MODEL_URL}/api/generate",
+        f"{base_url}/api/generate",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -70,7 +93,10 @@ def generate_local_response(message, user_name, history):
 
     try:
         with urlopen(request, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
+            raw = response.read(MAX_MODEL_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_MODEL_RESPONSE_BYTES:
+                return None
+            result = json.loads(raw.decode("utf-8"))
             return result.get("response", "").strip() or None
     except (OSError, URLError, json.JSONDecodeError):
         return None

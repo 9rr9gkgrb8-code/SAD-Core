@@ -22,6 +22,10 @@ class PersonalStudyTests(unittest.TestCase):
         plan = build_study_plan(StudyRequest(StudyAction.DIRECT_ANSWER, "question"))
         self.assertTrue(plan.instruction.startswith("Answer directly"))
 
+    def test_oversized_study_material_is_rejected(self):
+        with self.assertRaises(ValueError):
+            build_study_plan(StudyRequest(StudyAction.CHECK_WORK, "x" * 1_000_001))
+
 
 if __name__ == "__main__":
     unittest.main()

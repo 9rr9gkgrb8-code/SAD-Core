@@ -82,8 +82,7 @@ class SandboxTests(unittest.TestCase):
         self.assertIn("--- a/personality.py", exported_patch)
         self.assertIn("+++ b/personality.py", exported_patch)
 
-    @patch("sandbox.subprocess.run")
-    def test_approved_patch_can_be_checked_without_applying(self, mock_run):
+    def test_approved_patch_can_be_checked_without_applying(self):
         proposal, sandbox_path = sandbox.create_sandbox_proposal(
             "failure-987", "personality.py", "Validate a draft."
         )
@@ -101,15 +100,11 @@ class SandboxTests(unittest.TestCase):
             json.dumps(proposal), encoding="utf-8"
         )
         sandbox.approve_sandbox_proposal(proposal["proposal_id"])
-        mock_run.return_value.returncode = 0
-        mock_run.return_value.stdout = ""
-        mock_run.return_value.stderr = ""
-
         validation = sandbox.validate_approved_patch(proposal["proposal_id"])
 
         self.assertTrue(validation["is_valid"])
         self.assertTrue(validation["patch_path"].exists())
-        self.assertEqual(mock_run.call_args.args[0][:3], ["git", "apply", "--check"])
+        self.assertEqual(validation["details"], "")
 
 if __name__ == "__main__":
     unittest.main()

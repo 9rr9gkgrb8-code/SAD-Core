@@ -52,6 +52,10 @@ def homework_to_quest(subject, assignment, learning_objective=""):
     """Convert supplied homework into a deterministic quest without solving it."""
     if not assignment.strip():
         raise ValueError("Homework content is required.")
+    if not isinstance(subject, str) or not 1 <= len(subject.strip()) <= 100:
+        raise ValueError("Subject must be 1-100 characters.")
+    if len(assignment) > 1_000_000 or len(learning_objective) > 10_000:
+        raise ValueError("Quest input exceeds the safe size limit.")
     objective = learning_objective.strip() or f"Understand and complete the supplied {subject} work"
     digest = hashlib.sha256(f"{subject}\0{assignment}".encode()).hexdigest()[:12]
     return Quest(

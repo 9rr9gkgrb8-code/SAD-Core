@@ -83,6 +83,19 @@ class AuthTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.auth.require(student, "development:view")
 
+    def test_profiles_are_isolated_per_account(self):
+        owner = self.owner_token()
+        self.auth.create_account("student", "StrongStudent123", "student", owner)
+        student = self.auth.login("student", "StrongStudent123")
+        self.auth.update_profile(owner, display_name="Owner Name", level=2)
+        self.auth.update_profile(student, display_name="Student Name", level=1)
+        self.assertEqual(self.auth.get_profile(owner), {"display_name": "Owner Name", "level": 2})
+        self.assertEqual(self.auth.get_profile(student), {"display_name": "Student Name", "level": 1})
+
+    def test_unbounded_password_input_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.auth.bootstrap_owner("owner", "A1" + "x" * 2000, True)
+
 
 if __name__ == "__main__":
     unittest.main()

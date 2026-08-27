@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
+import json
 import uuid
 
 
@@ -44,6 +45,16 @@ class FailureEvent:
             raise ValueError("Failure source must be sad, forge, test, or user.")
         if not self.evidence:
             raise ValueError("Normalized failures require evidence.")
+        if not isinstance(self.category, str) or not 1 <= len(self.category) <= 100:
+            raise ValueError("Failure category must be 1-100 characters.")
+        if not isinstance(self.summary, str) or not 1 <= len(self.summary) <= 10_000:
+            raise ValueError("Failure summary must be 1-10,000 characters.")
+        if not isinstance(self.suggested_correction, str) or len(self.suggested_correction) > 10_000:
+            raise ValueError("Suggested correction is too large.")
+        if len(self.evidence) > 100 or len(json.dumps(self.evidence)) > 1_000_000:
+            raise ValueError("Failure evidence exceeds the safe limit.")
+        if len(self.affected_files) > 100 or any(not isinstance(path, str) or len(path) > 500 for path in self.affected_files):
+            raise ValueError("Affected file metadata exceeds the safe limit.")
         if not self.signature:
             raw = f"{self.category}\0{self.summary.strip().lower()}"
             self.signature = hashlib.sha256(raw.encode()).hexdigest()
@@ -61,7 +72,8 @@ class DevWorkItem:
 class FailureDashboard:
     """One dashboard; role permissions determine available authority."""
 
-    def __init__(self):
+    def __init__(self, auth_service=None):
+        self.auth_service = auth_service
         self.failures = {}
         self.by_signature = {}
         self.dev_items = {}
@@ -76,8 +88,14 @@ class FailureDashboard:
         self.by_signature[event.signature] = event.failure_id
         return event
 
-    def push_to_development(self, failure_id, actor_role, explicitly_approved=False):
-        if actor_role != "owner" or not explicitly_approved:
+    def _require_governance(self, actor_token):
+        if self.auth_service is None:
+            raise PermissionError("Dashboard governance requires an authentication service.")
+        return self.auth_service.require(actor_token, "development:govern")
+
+    def push_to_development(self, failure_id, actor_token, explicitly_approved=False):
+        self._require_governance(actor_token)
+        if not explicitly_approved:
             raise PermissionError("Only an owner may explicitly push a failure to development.")
         failure = self.failures[failure_id]
         existing = next((item for item in self.dev_items.values() if item.failure_id == failure_id), None)
@@ -88,12 +106,14 @@ class FailureDashboard:
         failure.state = FailureState.PUSHED_TO_DEVELOPMENT.value
         return item
 
-    def approve_isolated_work(self, work_item_id, actor_role):
-        if actor_role != "owner":
-            raise PermissionError("Owner approval is required for isolated work.")
+    def approve_isolated_work(self, work_item_id, actor_token):
+        self._require_governance(actor_token)
         item = self.dev_items[work_item_id]
         item.state = DevState.APPROVED_FOR_ISOLATED_WORK.value
         return item
 
-    def snapshot(self):
+    def snapshot(self, actor_token):
+        if self.auth_service is None:
+            raise PermissionError("Dashboard reads require an authentication service.")
+        self.auth_service.require(actor_token, "development:view")
         return {"failures": [asdict(item) for item in self.failures.values()], "development": [asdict(item) for item in self.dev_items.values()]}

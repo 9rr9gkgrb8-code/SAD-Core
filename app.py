@@ -1,6 +1,9 @@
 import json
 import re
 import subprocess
+from getpass import getpass
+
+from auth import AuthService
 
 from personality import (
     detect_conversation_topic,
@@ -78,7 +81,25 @@ def ask_for_name():
         print("Please enter a name.")
 
 
-def chat(level, settings, show_intro=True):
+GOVERNED_COMMANDS = {
+    "review failures", "repair status", "repair candidates", "repair plans", "approve failure",
+    "create proposal", "draft correction", "review proposal", "approve proposal",
+    "export proposal", "validate proposal",
+}
+
+
+def _save_user_settings(auth_service, session_token, settings):
+    if auth_service is None:
+        save_settings(settings)
+        return
+    auth_service.update_profile(
+        session_token,
+        display_name=settings.get("user_name"),
+        level=settings.get("level"),
+    )
+
+
+def chat(level, settings, show_intro=True, auth_service=None, session_token=None):
     if show_intro:
         print(f"\nSasha is using level {level}: {LEVEL_NAMES[level]}")
         print("Type 'help' to see available commands.\n")
@@ -97,6 +118,15 @@ def chat(level, settings, show_intro=True):
             continue
 
         command = message.lower()
+
+        if command in GOVERNED_COMMANDS:
+            try:
+                if auth_service is None:
+                    raise PermissionError("Authentication is required.")
+                auth_service.require(session_token, "development:govern")
+            except PermissionError:
+                print("Sasha: Owner authorization is required for that command.\n")
+                continue
 
         if command in ["quit", "exit", "bye"]:
             print(f"Sasha: Goodbye, {settings['user_name']}!")
@@ -126,7 +156,30 @@ def chat(level, settings, show_intro=True):
             print("  model status      - Check whether a local model is ready")
             print("  local model on    - Use the local model for this session")
             print("  local model off   - Return to Sasha's built-in conversation layer")
+            print("  create account    - Owner/teacher account creation within role limits")
+            print("  logout            - End the authenticated session")
             print("  quit              - End the conversation\n")
+            continue
+
+        if command == "logout":
+            if auth_service is not None:
+                auth_service.logout(session_token)
+            print("Sasha: You are logged out.")
+            break
+
+        if command == "create account":
+            if auth_service is None:
+                print("Sasha: Authentication is required.\n")
+                continue
+            role = input("Role (student, teacher, developer): ").strip().lower()
+            username = input("New username: ").strip()
+            password = getpass("New password: ")
+            try:
+                account = auth_service.create_account(username, password, role, session_token)
+            except (PermissionError, ValueError) as error:
+                print(f"Sasha: Account was not created: {error}\n")
+                continue
+            print(f"Sasha: Created {account['role']} account {account['username']}.\n")
             continue
 
         if command == "level":
@@ -145,7 +198,7 @@ def chat(level, settings, show_intro=True):
         if level_match:
             level = int(level_match.group(1))
             settings["level"] = level
-            save_settings(settings)
+            _save_user_settings(auth_service, session_token, settings)
 
             print(
                 f"Sasha: My level is now {level}: "
@@ -156,7 +209,7 @@ def chat(level, settings, show_intro=True):
         if command in ["change", "change level"]:
             level = choose_level()
             settings["level"] = level
-            save_settings(settings)
+            _save_user_settings(auth_service, session_token, settings)
 
             print(
                 f"Sasha: My level is now {level}: "
@@ -176,7 +229,7 @@ def chat(level, settings, show_intro=True):
 
             if new_name:
                 settings["user_name"] = new_name
-                save_settings(settings)
+                _save_user_settings(auth_service, session_token, settings)
                 print(f"Sasha: Got it. I’ll call you {new_name}.")
             else:
                 print("Sasha: Your name was not changed.")
@@ -484,33 +537,51 @@ def chat(level, settings, show_intro=True):
 
 
 def main():
-    settings = load_settings()
-    current_level = settings["level"]
-    user_name = settings["user_name"].strip()
+    auth_service = AuthService()
+    if not auth_service.has_owner():
+        print("No owner account exists. Explicit local approval is required for initial setup.")
+        if not ask_yes_or_no("Create the first owner account now? (y/n): "):
+            print("SAD cannot start without an owner account.")
+            return
+        username = input("Owner username: ").strip()
+        password = getpass("Owner password: ")
+        confirmation = getpass("Confirm owner password: ")
+        if password != confirmation:
+            print("Passwords did not match. No account was created.")
+            return
+        try:
+            auth_service.bootstrap_owner(username, password, explicitly_approved=True)
+        except (PermissionError, ValueError, OSError, json.JSONDecodeError) as error:
+            print(f"Owner setup failed: {error}")
+            return
+
+    username = input("Username: ").strip()
+    password = getpass("Password: ")
+    try:
+        session_token = auth_service.login(username, password)
+    except (ValueError, OSError, json.JSONDecodeError):
+        session_token = None
+    if not session_token:
+        print("Login failed.")
+        return
+    account = auth_service.require(session_token)
+
+    profile = auth_service.get_profile(session_token)
+    current_level = profile["level"]
+    user_name = profile["display_name"]
+    settings = {"level": current_level, "user_name": user_name}
 
     print("Welcome to SAD — Sandbox Adaptive Dialogue")
 
-    is_new_user = not user_name
+    print(f"Sasha: Welcome back, {user_name}.")
 
-    if is_new_user:
-        user_name = ask_for_name()
-        settings["user_name"] = user_name
-        save_settings(settings)
-        print(f"Nice to meet you, {user_name}!")
-
-        change_level = ask_yes_or_no(
-            "Would you like to change the level? (y/n): "
-        )
-
-        if change_level:
-            current_level = choose_level()
-            settings["level"] = current_level
-            save_settings(settings)
-            print("Your settings have been saved.")
-    else:
-        print(f"Sasha: Welcome back, {user_name}.")
-
-    chat(current_level, settings, show_intro=is_new_user)
+    chat(
+        current_level,
+        settings,
+        show_intro=True,
+        auth_service=auth_service,
+        session_token=session_token,
+    )
 
 
 if __name__ == "__main__":

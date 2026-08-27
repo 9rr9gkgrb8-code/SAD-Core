@@ -32,6 +32,10 @@ class ForgeStudentTests(unittest.TestCase):
         complete_quest(progress, quest, 1, True)
         self.assertEqual(progress.xp, 100)
 
+    def test_oversized_homework_is_rejected(self):
+        with self.assertRaises(ValueError):
+            homework_to_quest("math", "x" * 1_000_001)
+
 
 if __name__ == "__main__":
     unittest.main()

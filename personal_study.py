@@ -59,8 +59,10 @@ def build_study_plan(request: StudyRequest) -> StudyPlan:
     """Translate the user's requested help into an explicit, non-Socratic plan."""
     if not request.material.strip():
         raise ValueError("Study material is required.")
+    if len(request.material) > 1_000_000:
+        raise ValueError("Study material exceeds the safe size limit.")
     if request.action == StudyAction.EXPAND_WORD_COUNT:
-        if not request.target_word_count or request.target_word_count < 1:
+        if not request.target_word_count or not 1 <= request.target_word_count <= 100_000:
             raise ValueError("A positive target word count is required for expansion.")
 
     boundaries = [

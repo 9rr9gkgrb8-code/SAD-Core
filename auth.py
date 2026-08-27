@@ -16,6 +16,7 @@ PASSWORD_ITERATIONS = 600_000
 SESSION_HOURS = 12
 MAX_FAILED_ATTEMPTS = 5
 LOCK_MINUTES = 15
+MAX_ACCOUNTS_FILE_BYTES = 2_000_000
 
 
 class Role(str, Enum):
@@ -47,6 +48,8 @@ def _now():
 
 
 def _normalized_username(username):
+    if not isinstance(username, str):
+        raise ValueError("Username must be text.")
     value = username.strip().lower()
     if not 3 <= len(value) <= 64 or not all(character.isalnum() or character in "._-" for character in value):
         raise ValueError("Username must be 3-64 characters using letters, numbers, dot, dash, or underscore.")
@@ -54,8 +57,8 @@ def _normalized_username(username):
 
 
 def _validate_password(password):
-    if len(password) < 12:
-        raise ValueError("Password must be at least 12 characters.")
+    if not isinstance(password, str) or not 12 <= len(password) <= 1024:
+        raise ValueError("Password must be 12-1024 characters.")
     if not any(character.isalpha() for character in password) or not any(character.isdigit() for character in password):
         raise ValueError("Password must contain at least one letter and one number.")
 
@@ -77,6 +80,8 @@ class AuthService:
     def _load(self):
         if not self.accounts_file.exists():
             return {"schema_version": 1, "accounts": []}
+        if self.accounts_file.stat().st_size > MAX_ACCOUNTS_FILE_BYTES:
+            raise ValueError("Accounts file is unexpectedly large.")
         data = json.loads(self.accounts_file.read_text(encoding="utf-8"))
         if data.get("schema_version") != 1 or not isinstance(data.get("accounts"), list):
             raise ValueError("Unsupported or invalid accounts file.")
@@ -86,7 +91,14 @@ class AuthService:
         self.accounts_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.accounts_file.with_suffix(self.accounts_file.suffix + ".tmp")
         temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        try:
+            os.chmod(temporary, 0o600)
+        except OSError:
+            pass
         os.replace(temporary, self.accounts_file)
+
+    def has_owner(self):
+        return any(account.get("role") == Role.OWNER.value for account in self._load()["accounts"])
 
     def _find(self, data, username):
         return next((account for account in data["accounts"] if account["username"] == username), None)
@@ -124,6 +136,7 @@ class AuthService:
             "password_salt": salt, "password_hash": password_hash,
             "created_at": self.now().isoformat(), "active": True,
             "failed_attempts": 0, "locked_until": None,
+            "profile": {"display_name": normalized, "level": 0},
         }
         data["accounts"].append(account)
         self._save(data)
@@ -170,6 +183,34 @@ class AuthService:
 
     def logout(self, token):
         return self.sessions.pop(token, None) is not None
+
+    def get_profile(self, token):
+        account = self.require(token)
+        data = self._load()
+        stored = next(item for item in data["accounts"] if item["account_id"] == account["account_id"])
+        profile = stored.get("profile", {})
+        display_name = profile.get("display_name", account["username"])
+        level = profile.get("level", 0)
+        return {
+            "display_name": display_name if isinstance(display_name, str) and display_name.strip() else account["username"],
+            "level": level if level in {0, 1, 2} else 0,
+        }
+
+    def update_profile(self, token, display_name=None, level=None):
+        account = self.require(token)
+        data = self._load()
+        stored = next(item for item in data["accounts"] if item["account_id"] == account["account_id"])
+        profile = stored.setdefault("profile", {"display_name": account["username"], "level": 0})
+        if display_name is not None:
+            if not isinstance(display_name, str) or not display_name.strip() or len(display_name.strip()) > 80:
+                raise ValueError("Display name must be 1-80 characters.")
+            profile["display_name"] = display_name.strip()
+        if level is not None:
+            if level not in {0, 1, 2}:
+                raise ValueError("Dialogue level must be 0, 1, or 2.")
+            profile["level"] = level
+        self._save(data)
+        return dict(profile)
 
     @staticmethod
     def public_account(account):
