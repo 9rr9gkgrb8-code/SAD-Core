@@ -13,8 +13,20 @@ Updated: August 27, 2026
 - SAD↔Forge schema v1.0 includes request, correlation, job and artifact IDs;
   deterministic test plans; terminal states; hashed durable diff/test/diagnostic/
   receipt artifacts; and no Forge approval or merge authority.
-- Loopback HTTP/JSON API v1 provides health, login, failure, job, result, dashboard,
-  Personal Study and Forge Student endpoints.
+- Loopback HTTP/JSON API v1 provides health, login, SAD Chat, failure, job, result,
+  dashboard, Personal Study and Forge Student endpoints.
+- SAD Chat provides a dedicated general-conversation lane separate from Forge and
+  repair governance. It supports durable per-account sessions, new/history/archive,
+  multi-turn recent context, and visible Local AI vs Built-in dialogue status.
+- Conversation ownership is enforced by account ID. A different signed-in account
+  cannot read a conversation by guessing or learning its UUID.
+- Chat history is local-only in Git-ignored `chat_history.json`, written atomically
+  with restrictive permissions where supported, bounded before save, and excluded
+  from the service-worker cache.
+- SAD Chat sends recent turns to the configured loopback local model. When the model
+  is unavailable, SAD explicitly uses and labels the limited built-in dialogue layer.
+- Conversation text has no repair, file, shell, approval, or Git authority. Governed
+  actions remain behind their explicit role and approval endpoints.
 - One durable dashboard store supports Failure Inbox, review, suggested correction,
   explicit push, isolated-work approval, Forge status/results, evidence,
   approve/reject and close.
@@ -49,9 +61,9 @@ Updated: August 27, 2026
   regression-tested against the backend progression contract.
 - Local per-user authentication uses salted PBKDF2 hashes, expiring sessions,
   lockout, owner-controlled privileged account creation and no shared credential.
-- Mobile Preview now includes a phone-first installable PWA shell, safe-area/touch
+- Mobile Preview includes a phone-first installable PWA shell, safe-area/touch
   layout, install hooks, online/offline status, and static-shell-only service-worker
-  caching. API and pairing traffic is explicitly excluded from the cache.
+  caching. API, pairing, and chat traffic is explicitly excluded from the cache.
 - Mobile device trust uses Owner-generated one-time 8-digit codes, five-minute expiry,
   single-use consumption, pairing-attempt throttling, 30-day device expiry, and
   Owner revocation. Pairing codes/device tokens are hashed at rest.
@@ -61,18 +73,22 @@ Updated: August 27, 2026
 - The mobile gateway is a separate TLS 1.2+ network surface; the normal SAD API stays
   loopback-only. The gateway rejects wildcard, loopback, hostname, and public IPv4
   bindings and accepts one explicit private/approved overlay IPv4 address.
-- Mobile `learning` mode admits only account-self, Personal Study, Forge play and own
-  progress routes. `full_role` mode still defers to the existing signed-in SAD RBAC.
+- Mobile `learning` mode admits explicitly matched SAD Chat, account-self, Personal
+  Study, Forge play and own progress routes. Invented chat subroutes do not pass the
+  gateway. `full_role` mode still defers to the existing signed-in SAD RBAC.
 - Owner Mobile Access UI can create temporary pairing codes, list paired phones, and
   revoke device access. Phones still require a normal SAD account login after pairing.
 - Mobile preflight (`mobile_doctor.py`), combined desktop/mobile launcher (`mobile.py`),
   and Windows wrapper (`start_mobile.ps1`) are included. Provider/certificate-specific
   host setup remains an operational step, not an implicit trust change by SAD.
+- Chat regression tests cover durable ownership, local-model history, built-in fallback,
+  authenticated API access, cross-account denial, archive behavior, learning-phone
+  route scoping, PWA cache privacy, accessible chat controls, and phone layout.
 - Mobile regression tests cover pairing secrecy/expiry/revocation, owner authority,
   route isolation, bind-address refusal, rate limiting, PWA install contract, API
   cache exclusion, and phone touch/safe-area requirements.
-- GitHub CI compiles the project, syntax-checks browser JavaScript, and runs the full
-  test/contract/security suite.
+- GitHub CI compiles the project, syntax-checks all browser JavaScript including SAD
+  Chat, and runs the full test/contract/security suite.
 - The Alpha release gate is tested and enforced by CI; it verifies required release
   surfaces and blocks retired private-mode implementation markers from returning to
   the current release tree, including Python, docs, browser JavaScript, HTML, CSS,
@@ -85,14 +101,15 @@ Updated: August 27, 2026
   through `DockerSandboxRunner` with the production boundary. The proof verifies
   non-root execution, a read-only workspace, writable tmpfs, stripped GitHub
   credentials, and unavailable external networking.
-- Alpha 1 browser UI provides separate role-filtered Personal Study, Forge Student,
+- Alpha browser UI provides SAD Chat plus role-filtered Personal Study, Forge Student,
   teacher roster, Owner/Dev dashboard, account control, mobile control, and security
   surfaces.
 - Browser accessibility structure has automated regression checks for form labels,
-  keyboard order, visible focus, live announcements, navigation semantics, and
-  data-table captions/column scopes.
+  keyboard order, visible focus, live announcements, navigation semantics, data-table
+  captions/column scopes, plus SAD Chat log/composer/history controls.
 - A role-by-role `ALPHA_UAT.md` protocol defines owner, student, teacher, developer,
-  reviewer, viewer, security, accessibility, severity, stop, and Alpha-exit criteria.
+  reviewer, viewer, SAD Chat, mobile, security, accessibility, severity, stop, and
+  Alpha-exit criteria.
 - Personal Study can generate full output through the explicitly configured
   loopback-only local model and reports honestly when the model is unavailable.
 - Account lifecycle includes owner listing/disable controls, self-service password
@@ -103,21 +120,23 @@ Updated: August 27, 2026
 - Repeat the Docker proof on the actual deployment computer using the reviewed image
   approved for that machine. The Linux CI runner proves the container code path, but
   it does not substitute for host-specific Docker Desktop/Windows verification.
-- Configure and validate the intended local repair model on the deployment computer;
-  automatic repair drafting fails closed when that model is unavailable or returns
-  an unsafe/ambiguous plan.
+- Configure and validate the intended local model on the deployment computer. SAD
+  Chat can fall back to built-in dialogue without it, but full AI conversation and
+  automatic repair drafting require the intended local model to be healthy.
 - Execute the controlled human UAT protocol with representative student, teacher,
-  owner, developer, reviewer, and viewer accounts. The protocol is defined; human
-  pilot evidence is not yet claimed as complete.
+  owner, developer, reviewer, and viewer accounts, including SAD Chat account isolation
+  and authority-boundary scenarios. Human pilot evidence is not yet claimed complete.
 - Perform the manual keyboard, screen-reader, 200% zoom, and narrow-viewport checks
   in `ALPHA_UAT.md`; automated structural accessibility checks do not replace them.
 - For Mobile Preview, provision a phone-trusted TLS certificate/key on the Windows
   deployment host, choose the explicit private bind address, and require
   `python mobile_doctor.py` → `MOBILE GATEWAY: READY`.
 - Run mobile host/phone UAT: pairing, repeated invalid-code throttling, revocation,
-  learning-mode denial of admin/development routes, full-role RBAC, iPhone/Android
-  install/home-screen behavior, reconnect behavior, and narrow-screen usability.
-- Sessions are intentionally memory-only and require login again after API restart.
+  SAD Chat continuity, learning-mode denial of admin/development routes, full-role
+  RBAC, iPhone/Android install/home-screen behavior, reconnect behavior, and
+  narrow-screen usability.
+- Account sessions are intentionally memory-only and require login again after API
+  restart. Conversation sessions themselves are durable and reappear after login.
 - Public internet hosting remains deliberately unsupported for Alpha 1. The mobile
   preview must not be router-port-forwarded; public TLS termination, hosted secrets,
   email recovery, and external identity remain future work.
