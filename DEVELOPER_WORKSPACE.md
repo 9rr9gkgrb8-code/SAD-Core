@@ -11,7 +11,7 @@ Allow a signed-in Owner or Developer to give SAD a real software task, let the c
 1. **Describe the coding task.**
 2. **Plan file scope.** SAD may suggest the smallest set of source paths, but this step writes no code.
 3. **Human approves the scope.** The user can edit the suggested list before creating the workspace.
-4. **Create private workspace.** SAD copies the project into `.sad_dev/<workspace-id>/worktree` without Git control metadata or private runtime data.
+4. **Create private workspace.** SAD copies the project into `.sad_dev/<workspace-id>/worktree` without Git/repository-control metadata or private runtime data.
 5. **Generate code.** The local model may write/delete only paths on the approved scope list. It returns complete final file contents in a strict JSON plan.
 6. **Run Docker verification.** The same digest-pinned, networkless, non-root Docker boundary used by repair verification runs the full Python unit suite against the copied project.
 7. **Review evidence.** SAD shows changed paths, exact unified diff, test result/output, and integrity evidence.
@@ -32,7 +32,7 @@ The API enforces these rules through the existing `development:view`, `developme
 
 Automatic coding accepts at most 20 explicitly approved source paths per workspace. The coding model cannot target paths outside that list.
 
-Protected from automatic coding:
+Protected from automatic coding and omitted from the coding worktree:
 
 - `.git/`
 - `.github/`
@@ -42,10 +42,10 @@ Protected from automatic coding:
 - Python cache directories
 - account/session/progress/failure runtime JSON
 - `.env` and environment-secret files
-- hidden repository paths
-- unsupported/binary file types
 
-The isolated test copy may contain non-editable repository metadata such as `.github/workflows/ci.yml` when tests need to read it. Presence in the test copy does not grant the coding model permission to edit it.
+Hidden repository paths and unsupported/binary file types are also rejected as automatic coding targets.
+
+The worktree is a source/test copy, not a repository checkout. If a future project requires control-plane files merely as test fixtures, that will need an explicit separate read-only-fixture design rather than silently adding them to the coding workspace.
 
 ## Allowed automatic file types
 
