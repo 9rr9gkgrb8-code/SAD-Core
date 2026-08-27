@@ -9,6 +9,7 @@ import mimetypes
 
 from auth import AuthService
 from conversation import ConversationStore, generate_chat_reply
+from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from mobile_access import MobileAccessStore
@@ -24,12 +25,16 @@ MAX_REQUEST_BYTES = 2_000_000
 
 
 class SadApiService:
-    def __init__(self, auth=None, dashboard=None, progress=None, mobile_access=None, conversations=None):
+    def __init__(
+        self, auth=None, dashboard=None, progress=None, mobile_access=None,
+        conversations=None, developer_workspaces=None,
+    ):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
         self.progress = progress or ProgressStore(Path(__file__).with_name("student_progress.json"))
         self.mobile_access = mobile_access or MobileAccessStore()
         self.conversations = conversations or ConversationStore()
+        self.developer_workspaces = developer_workspaces or DeveloperWorkspaceStore()
 
     def token(self, headers):
         value = headers.get("Authorization", "")
@@ -75,6 +80,33 @@ class SadApiService:
             reply, engine = generate_chat_reply(body.get("message", ""), profile, session)
             updated = self.conversations.append_turn(account_id, session_id, body.get("message", ""), reply, engine)
             return 200, {"reply": reply, "engine": engine, "session": updated}
+
+        if method == "POST" and path == "/v1/dev/workspaces/scope":
+            self.auth.require(token, "development:work")
+            return 200, suggest_scope(body.get("task", ""))
+        if method == "GET" and path == "/v1/dev/workspaces":
+            self.auth.require(token, "development:view")
+            return 200, {"workspaces": self.developer_workspaces.list()}
+        if method == "POST" and path == "/v1/dev/workspaces":
+            self.auth.require(token, "development:work")
+            return 201, self.developer_workspaces.create(
+                body.get("task", ""), body.get("allowed_paths", []), account_id,
+            )
+        match = re.fullmatch(r"/v1/dev/workspaces/([0-9a-f-]+)(?:/(execute|apply|rollback))?", path)
+        if match:
+            workspace_id, action = match.groups()
+            if method == "GET" and not action:
+                self.auth.require(token, "development:view")
+                return 200, self.developer_workspaces.get(workspace_id)
+            if method == "POST" and action == "execute":
+                self.auth.require(token, "development:work")
+                return 200, self.developer_workspaces.execute(workspace_id)
+            if method == "POST" and action == "apply":
+                self.auth.require(token, "development:govern")
+                return 200, self.developer_workspaces.apply(workspace_id)
+            if method == "POST" and action == "rollback":
+                self.auth.require(token, "development:govern")
+                return 200, self.developer_workspaces.rollback(workspace_id)
 
         if method == "GET" and path == "/v1/accounts":
             return 200, {"accounts": self.auth.list_accounts(token)}
