@@ -22,3 +22,5 @@ jobs:
         run: python -m unittest -v
       - name: Alpha release gate
         run: python release_gate.py
+      - name: Alpha operator preflight
+        run: python alpha_doctor.py
