@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent
 REQUIRED_PATHS = (
     ".github/workflows/ci.yml",
     "ALPHA1.md",
+    "ALPHA_UAT.md",
     "SECURITY.md",
     "alpha.py",
     "alpha_doctor.py",
@@ -20,6 +21,10 @@ REQUIRED_PATHS = (
     "sandbox.py",
     "test_alpha_doctor.py",
     "test_alpha_product.py",
+    "test_web_accessibility.py",
+    "web/app.js",
+    "web/index.html",
+    "web/styles.css",
 )
 
 # Construct retired markers from fragments so the gate does not match itself.
@@ -32,7 +37,10 @@ RETIRED_MARKERS = (
     "18" + "+ add-on",
 )
 
-TEXT_SUFFIXES = {".py", ".md", ".json", ".yml", ".yaml", ".txt"}
+TEXT_SUFFIXES = {
+    ".py", ".md", ".json", ".yml", ".yaml", ".txt",
+    ".js", ".html", ".css",
+}
 EXCLUDED_PARTS = {".git", ".sad_sandbox", "local_data", "__pycache__"}
 
 
