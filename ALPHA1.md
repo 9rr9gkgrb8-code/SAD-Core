@@ -7,9 +7,8 @@ sandbox configuration. The doctor reports Alpha core readiness separately from
 repair-isolation readiness.
 
 - `ALPHA CORE: READY` means the local browser product can be started.
-- An unconfigured local model is optional; generated Personal Study output will be
-  unavailable until both `SAD_LOCAL_MODEL` and a loopback-only
-  `SAD_LOCAL_MODEL_URL` are configured.
+- An unconfigured local model is optional for normal Alpha use, but automatic Forge
+  repair drafting requires a configured loopback-only local model.
 - `REPAIR ISOLATION: BLOCKED` means Forge repair execution remains disabled until
   Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. It does
   not silently fall back to same-user execution.
@@ -33,16 +32,33 @@ Each person receives a separate credential. Students never see developer control
 - Teacher student-progress roster
 - Owner account administration
 - Owner Repair Inbox that presents each failure, suggested correction, affected
-  targets, Forge sandbox evidence, and a simplified final YES/NO decision
-- One-click Owner testing that explicitly authorizes review, push, isolation approval,
-  and isolated Forge execution while preserving the same backend permission checks
+  targets, Forge sandbox evidence, and the exact tested code diff before YES/NO
+- One-click Owner repair preparation that explicitly authorizes review, push,
+  isolation approval, local-model repair drafting, and isolated Forge verification
+- Owner YES applies only the exact passing sandbox proposal to the corresponding
+  local live file, using a stale-source check, atomic replacement, verified hash,
+  and a preserved proposal-local backup
 - Shared role-filtered Failure Inbox and Forge job dashboard with advanced review,
   push, isolation approval, execution, decision, and close controls
 - Password change and session revocation
 
-The simplified Owner YES action records approval after successful Forge verification
-and closes the workflow. Alpha intentionally does not auto-merge a tested repair into
-live code; live-code application remains a separate human-authority boundary.
+## Repair authority boundary
+
+Forge may draft one tightly scoped edit in one approved root Python file and test it
+inside the configured Docker boundary. The Owner must review the actual diff before
+approving it. A failed Forge result disables the simple YES path.
+
+For an Owner approval, SAD marks the passing sandbox draft human-approved and applies
+that exact tested file locally. If the live file no longer matches the source hash,
+application is refused. If the atomic write or dashboard persistence fails, SAD
+restores the preserved original and verifies the rollback.
+
+This does **not** grant Forge Git authority. The live-application code never commits,
+pushes, rebases, or merges. Repository publication remains a separate host/human
+workflow.
+
+Reviewer approval remains evidence/governance approval only and does not apply a live
+file. Developer and Forge roles still cannot approve or apply their own work.
 
 ## Acceptance
 
@@ -60,12 +76,16 @@ regression net rather than a substitute for the manual accessibility pass.
 Git. Stop the app before copying those files into an encrypted backup. Never put
 that backup in the public repository.
 
+The `.sad_sandbox/<proposal-id>/` directory also retains the approved patch and local
+pre-application backup used for repair evidence/rollback. Treat it as private runtime
+data, not repository content.
+
 ## Isolation
 
 Forge verification requires Docker plus a preloaded digest-pinned image in
 `SAD_SANDBOX_IMAGE`. Without it, execution stops as `isolation_unavailable`; there
-is no local-process fallback. Forge produces evidence only. Human roles retain all
-approval, export, and Git authority.
+is no local-process fallback. Forge produces repair drafts and evidence only. Human
+roles retain approval and Git authority.
 
 ## Alpha boundary
 

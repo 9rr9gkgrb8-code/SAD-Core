@@ -28,19 +28,25 @@ class OwnerRepairUiTests(unittest.TestCase):
         self.assertIn('approved: true', self.js)
         self.assertIn('source_snapshot: "owner-ui"', self.js)
 
-    def test_final_owner_choice_is_yes_or_no_and_closes(self):
-        self.assertIn('YES: Approve repair', self.js)
+    def test_owner_must_see_exact_tested_change_before_final_choice(self):
+        self.assertIn('Review exact tested code change', self.js)
+        self.assertIn('artifact.kind === "diff"', self.js)
+        self.assertIn('diffArtifact?.content?.patch', self.js)
+
+    def test_final_owner_choice_is_apply_or_reject_and_closes(self):
+        self.assertIn('YES: Apply tested repair', self.js)
         self.assertIn('NO: Reject repair', self.js)
         self.assertIn('/decision', self.js)
         self.assertIn('/close', self.js)
+        self.assertIn('exact tested patch', self.js)
 
     def test_failed_verification_cannot_be_approved_from_simple_owner_flow(self):
         self.assertIn('job.result?.state === "succeeded"', self.js)
         self.assertIn('disabled title=', self.js)
 
-    def test_owner_surface_does_not_claim_live_merge(self):
-        self.assertIn('does not auto-merge', self.js)
-        self.assertIn('No live-code merge was performed.', self.js)
+    def test_owner_surface_preserves_git_boundary(self):
+        self.assertIn('no Git commit, push, or merge authority', self.js)
+        self.assertIn('Git was not committed, pushed, or merged.', self.js)
 
     def test_non_owner_dashboard_keeps_existing_loader(self):
         self.assertIn('const legacyLoadDashboard = loadDashboard', self.js)

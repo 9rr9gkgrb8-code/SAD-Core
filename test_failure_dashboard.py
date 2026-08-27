@@ -98,14 +98,16 @@ class FailureDashboardTests(unittest.TestCase):
         item = dashboard.push_to_development(saved.failure_id, self.owner, True)
         item = dashboard.approve_isolated_work(item.work_item_id, self.owner, "source-sha")
         self.auth.create_account("developer", "StrongDeveloper123", "developer", self.owner)
+        self.auth.create_account("reviewer", "StrongReviewer123", "reviewer", self.owner)
         developer = self.auth.login("developer", "StrongDeveloper123")
+        reviewer = self.auth.login("reviewer", "StrongReviewer123")
         dashboard.start_forge(item.work_item_id, developer)
         request = item.request
         result = ForgeResult(str(uuid.uuid4()), request["request_id"], request["correlation_id"], "succeeded", (Artifact("tests", {"passed": 63}),))
         dashboard.record_forge_result(item.work_item_id, result, developer)
         with self.assertRaises(PermissionError):
             dashboard.decide(item.work_item_id, "approve", developer)
-        dashboard.decide(item.work_item_id, "approve", self.owner)
+        dashboard.decide(item.work_item_id, "approve", reviewer)
         dashboard.close(item.work_item_id, self.owner)
         sequences = [entry["sequence"] for entry in dashboard.dev_items[item.work_item_id].evidence]
         self.assertEqual(sequences, sorted(sequences))

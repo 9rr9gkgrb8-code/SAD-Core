@@ -84,22 +84,32 @@ class AlphaProductTests(unittest.TestCase):
         self.assertEqual(result["result"]["status"], "model_unavailable")
         self.assertIsNone(result["result"]["provider"])
 
-    def test_worker_returns_evidence_without_approval_authority(self):
+    def test_worker_generates_real_diff_evidence_without_approval_authority(self):
         request = {
             "request_id": str(uuid.uuid4()), "correlation_id": str(uuid.uuid4()),
             "allowed_targets": ["app.py"], "objective": "verify",
         }
         item = type("Item", (), {"request": request, "failure_id": str(uuid.uuid4())})()
         proposal = {"proposal_id": str(uuid.uuid4())}
+        sandbox_path = Path(self.temp.name)
+        (sandbox_path / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
         evidence = {
             "status": "sandbox_tests_passed", "test_output": "OK", "ordered_evidence": [],
             "live_project_integrity": True, "git_topology_integrity": True,
             "host_only_git_authority": True, "context_execution_root_match": True,
         }
-        with patch("forge_worker.create_sandbox_proposal", return_value=(proposal, Path(self.temp.name))), patch("forge_worker.run_sandbox_tests", return_value=evidence):
-            result = verify_approved_job(item)
+        planner = lambda target, objective, source: {
+            "find_text": "VALUE = 1", "replacement_text": "VALUE = 2", "rationale": "Test repair",
+        }
+        diff = "--- original/app.py\n+++ proposed/app.py\n@@\n-VALUE = 1\n+VALUE = 2\n"
+        with patch("forge_worker.create_sandbox_proposal", return_value=(proposal, sandbox_path)), patch(
+            "forge_worker.create_draft_patch", return_value=(proposal, diff)
+        ), patch("forge_worker.run_sandbox_tests", return_value=evidence):
+            result = verify_approved_job(item, planner=planner)
         self.assertIsInstance(result, ForgeResult)
         self.assertEqual(result.state, "succeeded")
+        self.assertEqual(result.artifacts[0].kind, "diff")
+        self.assertIn("VALUE = 2", result.artifacts[0].content["patch"])
         self.assertFalse(hasattr(result, "approval"))
         self.assertFalse(hasattr(result, "merge"))
 
