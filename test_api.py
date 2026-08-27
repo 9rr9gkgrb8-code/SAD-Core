@@ -50,7 +50,9 @@ class ApiTests(unittest.TestCase):
         _, work = self.service.dispatch("POST", "/v1/jobs", self.headers(), {"failure_id": failure["failure_id"], "approved": True})
         _, work = self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/approve-isolated", self.headers(), {"source_snapshot": "abc123"})
         self.auth.create_account("developer", "StrongDeveloper123", "developer", self.owner)
+        self.auth.create_account("reviewer", "StrongReviewer123", "reviewer", self.owner)
         developer = self.auth.login("developer", "StrongDeveloper123")
+        reviewer = self.auth.login("reviewer", "StrongReviewer123")
         self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/start", self.headers(developer), {})
         request = work["request"]
         result_payload = {
@@ -61,7 +63,7 @@ class ApiTests(unittest.TestCase):
         }
         _, result = self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/result", self.headers(developer), result_payload)
         self.assertEqual(result["state"], "awaiting_human_decision")
-        self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/decision", self.headers(), {"decision": "approve"})
+        self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/decision", self.headers(reviewer), {"decision": "approve"})
         self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/close", self.headers(), {})
         _, dashboard = self.service.dispatch("GET", "/v1/dashboard", self.headers(), {})
         self.assertEqual(dashboard["development"][0]["state"], "closed")
