@@ -1,0 +1,60 @@
+import unittest
+
+from auth import ROLE_PERMISSIONS
+from platform_registry import BUILTIN_MODULES, PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
+
+
+class PlatformRegistryTests(unittest.TestCase):
+    def setUp(self):
+        self.registry = PlatformRegistry()
+
+    def test_builtin_registry_is_versioned_and_unique(self):
+        self.assertEqual(PLATFORM_SCHEMA_VERSION, 1)
+        self.assertTrue(PLATFORM_VERSION.endswith("alpha"))
+        module_ids = [module.module_id for module in BUILTIN_MODULES]
+        capability_ids = [cap.capability_id for module in BUILTIN_MODULES for cap in module.capabilities]
+        self.assertEqual(len(module_ids), len(set(module_ids)))
+        self.assertEqual(len(capability_ids), len(set(capability_ids)))
+        self.assertIn("sad.platform", module_ids)
+        self.assertIn("sad.chat", module_ids)
+        self.assertIn("sad.developer", module_ids)
+
+    def test_student_catalog_exposes_learning_not_development(self):
+        manifest = self.registry.manifest("student", ROLE_PERMISSIONS["student"])
+        module_ids = {module["module_id"] for module in manifest["modules"]}
+        capability_ids = {
+            cap["capability_id"] for module in manifest["modules"] for cap in module["capabilities"]
+        }
+        self.assertIn("sad.platform", module_ids)
+        self.assertIn("sad.chat", module_ids)
+        self.assertIn("sad.study", module_ids)
+        self.assertIn("sad.forge", module_ids)
+        self.assertNotIn("sad.developer", module_ids)
+        self.assertNotIn("sad.accounts", module_ids)
+        self.assertNotIn("development:govern", capability_ids)
+
+    def test_owner_catalog_includes_governed_platform_surfaces(self):
+        manifest = self.registry.manifest("owner", ROLE_PERMISSIONS["owner"])
+        module_ids = {module["module_id"] for module in manifest["modules"]}
+        capability_ids = {
+            cap["capability_id"] for module in manifest["modules"] for cap in module["capabilities"]
+        }
+        self.assertIn("sad.developer", module_ids)
+        self.assertIn("sad.accounts", module_ids)
+        self.assertIn("development:govern", capability_ids)
+        govern = next(cap for cap in self.registry.catalog(ROLE_PERMISSIONS["owner"]) if cap["capability_id"] == "development:govern")
+        self.assertTrue(govern["human_approval_boundary"])
+        self.assertTrue(govern["mutates_state"])
+
+    def test_platform_metadata_explicitly_grants_no_authority(self):
+        manifest = self.registry.manifest("owner", ROLE_PERMISSIONS["owner"])
+        self.assertFalse(manifest["authority_model"]["platform_metadata_grants_authority"])
+        self.assertEqual(manifest["authority_model"]["git_authority"], "human_host_only")
+
+    def test_invalid_duplicate_capability_fails_closed(self):
+        with self.assertRaises(ValueError):
+            PlatformRegistry((BUILTIN_MODULES[0], BUILTIN_MODULES[0]))
+
+
+if __name__ == "__main__":
+    unittest.main()
