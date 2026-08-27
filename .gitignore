@@ -5,3 +5,4 @@ failures.json
 settings.json
 local_data/
 .env
+accounts.json

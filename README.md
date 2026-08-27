@@ -37,6 +37,16 @@ Duplicate signatures merge their evidence. Detection never starts development:
 only an explicit owner action can create one development work item or approve
 isolated work. Future developers use the same workflow without owner governance.
 
+## Local accounts and login
+
+`auth.py` provides local student, teacher, owner, and future developer accounts.
+Passwords are salted and hashed with PBKDF2, repeated failures temporarily lock an
+account, sessions expire and can be revoked, and role permissions protect owner
+governance. The first owner requires an explicit local bootstrap approval. After
+that, owners can create teachers and developers; teachers may create students.
+Runtime account data is stored in ignored `accounts.json` and must never be
+committed to the public repository.
+
 ## Isolation hardening
 
 Sandbox execution validates the resolved proposal path, fingerprints the live
