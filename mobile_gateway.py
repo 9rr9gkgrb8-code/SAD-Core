@@ -11,6 +11,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+import re
 import ssl
 import threading
 
@@ -29,12 +30,16 @@ LEARNING_EXACT_ROUTES = {
     ("GET", "/v1/auth/me"),
     ("POST", "/v1/auth/logout"),
     ("POST", "/v1/auth/password"),
+    ("GET", "/v1/chat/sessions"),
+    ("POST", "/v1/chat/sessions"),
     ("POST", "/v1/study/plan"),
     ("POST", "/v1/forge/quests"),
     ("GET", "/v1/forge/progress"),
     ("POST", "/v1/forge/hint"),
     ("POST", "/v1/forge/complete"),
 }
+CHAT_SESSION_ROUTE = re.compile(r"/v1/chat/sessions/[0-9a-f-]+")
+CHAT_ACTION_ROUTE = re.compile(r"/v1/chat/sessions/[0-9a-f-]+/(messages|archive)")
 
 
 def _now():
@@ -58,7 +63,13 @@ def mobile_route_allowed(mode, method, path):
         return True
     if mode != "learning":
         return False
-    return (method, path) in LEARNING_EXACT_ROUTES
+    if (method, path) in LEARNING_EXACT_ROUTES:
+        return True
+    if method == "GET" and CHAT_SESSION_ROUTE.fullmatch(path):
+        return True
+    if method == "POST" and CHAT_ACTION_ROUTE.fullmatch(path):
+        return True
+    return False
 
 
 class PairAttemptLimiter:
