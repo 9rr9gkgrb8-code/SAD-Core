@@ -1,9 +1,12 @@
 import unittest
 import tempfile
+import uuid
+import threading
 from pathlib import Path
 
 from auth import AuthService
 from failure_dashboard import FailureDashboard, FailureEvent
+from sad_forge_contract import Artifact, ForgeResult
 
 
 def event(source="sad"):
@@ -47,7 +50,8 @@ class FailureDashboardTests(unittest.TestCase):
         first = dashboard.ingest(event("sad"))
         second = dashboard.ingest(event("forge"))
         self.assertEqual(first.failure_id, second.failure_id)
-        self.assertEqual(len(second.evidence), 2)
+        self.assertEqual(len([item for item in second.evidence if "message" in item]), 2)
+        self.assertTrue(any(item.get("event") == "failure_deduplicated" for item in second.evidence))
 
     def test_future_developer_uses_same_dashboard_without_owner_governance(self):
         dashboard = FailureDashboard(self.auth)
@@ -76,6 +80,48 @@ class FailureDashboardTests(unittest.TestCase):
     def test_oversized_failure_is_rejected(self):
         with self.assertRaises(ValueError):
             FailureEvent("sad", "general", "x" * 10_001, [{"message": "evidence"}], "review")
+
+    def test_failure_and_workflow_survive_restart_without_duplicate_work(self):
+        state = Path(self.temp.name) / "dashboard.json"
+        dashboard = FailureDashboard(self.auth, state)
+        saved = dashboard.ingest(event())
+        item = dashboard.push_to_development(saved.failure_id, self.owner, True)
+        restarted = FailureDashboard(self.auth, state)
+        duplicate = restarted.push_to_development(saved.failure_id, self.owner, True)
+        self.assertEqual(item.work_item_id, duplicate.work_item_id)
+        self.assertEqual(len(restarted.dev_items), 1)
+
+    def test_complete_forge_flow_preserves_ordered_evidence_and_human_authority(self):
+        state = Path(self.temp.name) / "dashboard.json"
+        dashboard = FailureDashboard(self.auth, state)
+        saved = dashboard.ingest(FailureEvent("sad", "general", "broken", [{"test": "failed"}], "fix", ["app.py"]))
+        item = dashboard.push_to_development(saved.failure_id, self.owner, True)
+        item = dashboard.approve_isolated_work(item.work_item_id, self.owner, "source-sha")
+        self.auth.create_account("developer", "StrongDeveloper123", "developer", self.owner)
+        developer = self.auth.login("developer", "StrongDeveloper123")
+        dashboard.start_forge(item.work_item_id, developer)
+        request = item.request
+        result = ForgeResult(str(uuid.uuid4()), request["request_id"], request["correlation_id"], "succeeded", (Artifact("tests", {"passed": 63}),))
+        dashboard.record_forge_result(item.work_item_id, result, developer)
+        with self.assertRaises(PermissionError):
+            dashboard.decide(item.work_item_id, "approve", developer)
+        dashboard.decide(item.work_item_id, "approve", self.owner)
+        dashboard.close(item.work_item_id, self.owner)
+        sequences = [entry["sequence"] for entry in dashboard.dev_items[item.work_item_id].evidence]
+        self.assertEqual(sequences, sorted(sequences))
+        self.assertEqual(dashboard.dev_items[item.work_item_id].state, "closed")
+
+    def test_concurrent_pushes_still_create_one_work_item(self):
+        dashboard = FailureDashboard(self.auth, Path(self.temp.name) / "dashboard.json")
+        saved = dashboard.ingest(event())
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(dashboard.push_to_development(saved.failure_id, self.owner, True))) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len({item.work_item_id for item in results}), 1)
+        self.assertEqual(len(dashboard.dev_items), 1)
 
 
 if __name__ == "__main__":

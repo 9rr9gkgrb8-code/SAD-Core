@@ -171,7 +171,7 @@ def chat(level, settings, show_intro=True, auth_service=None, session_token=None
             if auth_service is None:
                 print("Sasha: Authentication is required.\n")
                 continue
-            role = input("Role (student, teacher, developer): ").strip().lower()
+            role = input("Role (student, teacher, developer, reviewer, viewer): ").strip().lower()
             username = input("New username: ").strip()
             password = getpass("New password: ")
             try:

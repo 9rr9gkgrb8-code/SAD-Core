@@ -17,7 +17,9 @@ class ContainerSandboxTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)
-        self.docker = self.workspace / "docker.exe"
+        self.runtime_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.runtime_temp.cleanup)
+        self.docker = Path(self.runtime_temp.name) / "docker.exe"
         self.docker.write_bytes(b"placeholder")
 
     def test_missing_runtime_or_unpinned_image_fails_closed(self):

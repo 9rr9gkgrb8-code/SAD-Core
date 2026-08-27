@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
+import threading
 
 
 ACCOUNTS_FILE = Path(__file__).with_name("accounts.json")
@@ -24,6 +25,8 @@ class Role(str, Enum):
     TEACHER = "teacher"
     OWNER = "owner"
     DEVELOPER = "developer"
+    REVIEWER = "reviewer"
+    VIEWER = "viewer"
 
 
 ROLE_PERMISSIONS = {
@@ -33,12 +36,20 @@ ROLE_PERMISSIONS = {
         "account:create_student",
     },
     Role.DEVELOPER.value: {
-        "study:personal", "development:view", "development:work_assigned",
+        "study:personal", "development:view", "development:work", "development:work_assigned",
+    },
+    Role.REVIEWER.value: {
+        "development:view", "development:review", "development:decide",
+    },
+    Role.VIEWER.value: {
+        "development:view",
     },
     Role.OWNER.value: {
         "study:personal", "forge:play", "progress:own", "progress:students",
         "account:create_student", "account:create_teacher", "account:create_developer",
-        "development:view", "development:work_assigned", "development:govern",
+        "account:create_reviewer", "account:create_viewer",
+        "development:view", "development:review", "development:work",
+        "development:work_assigned", "development:decide", "development:govern",
     },
 }
 
@@ -76,6 +87,7 @@ class AuthService:
         self.accounts_file = Path(accounts_file)
         self.now = now or _now
         self.sessions = {}
+        self.lock = threading.RLock()
 
     def _load(self):
         if not self.accounts_file.exists():
@@ -105,25 +117,29 @@ class AuthService:
 
     def bootstrap_owner(self, username, password, explicitly_approved=False):
         """Create the first owner only through an explicit local approval action."""
-        if not explicitly_approved:
-            raise PermissionError("Explicit approval is required to bootstrap an owner.")
-        data = self._load()
-        if any(account["role"] == Role.OWNER.value for account in data["accounts"]):
-            raise PermissionError("An owner already exists.")
-        return self._create(data, username, password, Role.OWNER.value)
+        with self.lock:
+            if not explicitly_approved:
+                raise PermissionError("Explicit approval is required to bootstrap an owner.")
+            data = self._load()
+            if any(account["role"] == Role.OWNER.value for account in data["accounts"]):
+                raise PermissionError("An owner already exists.")
+            return self._create(data, username, password, Role.OWNER.value)
 
     def create_account(self, username, password, role, actor_token):
-        role_value = Role(role).value
-        actor = self.require(actor_token)
-        required = {
+        with self.lock:
+            role_value = Role(role).value
+            actor = self.require(actor_token)
+            required = {
             Role.STUDENT.value: "account:create_student",
             Role.TEACHER.value: "account:create_teacher",
             Role.DEVELOPER.value: "account:create_developer",
+            Role.REVIEWER.value: "account:create_reviewer",
+            Role.VIEWER.value: "account:create_viewer",
             Role.OWNER.value: None,
-        }[role_value]
-        if required is None or required not in ROLE_PERMISSIONS[actor["role"]]:
-            raise PermissionError("The signed-in account cannot create that role.")
-        return self._create(self._load(), username, password, role_value)
+            }[role_value]
+            if required is None or required not in ROLE_PERMISSIONS[actor["role"]]:
+                raise PermissionError("The signed-in account cannot create that role.")
+            return self._create(self._load(), username, password, role_value)
 
     def _create(self, data, username, password, role):
         normalized = _normalized_username(username)
@@ -143,30 +159,31 @@ class AuthService:
         return self.public_account(account)
 
     def login(self, username, password):
-        normalized = _normalized_username(username)
-        data = self._load()
-        account = self._find(data, normalized)
-        if not account:
-            return None
-        now = self.now()
-        locked_until = datetime.fromisoformat(account["locked_until"]) if account.get("locked_until") else None
-        if locked_until and now < locked_until:
-            return None
-        _, candidate = _password_hash(password, account["password_salt"])
-        valid = account.get("active", False) and hmac.compare_digest(candidate, account["password_hash"])
-        if not valid:
-            account["failed_attempts"] = account.get("failed_attempts", 0) + 1
-            if account["failed_attempts"] >= MAX_FAILED_ATTEMPTS:
-                account["locked_until"] = (now + timedelta(minutes=LOCK_MINUTES)).isoformat()
-                account["failed_attempts"] = 0
+        with self.lock:
+            normalized = _normalized_username(username)
+            data = self._load()
+            account = self._find(data, normalized)
+            if not account:
+                return None
+            now = self.now()
+            locked_until = datetime.fromisoformat(account["locked_until"]) if account.get("locked_until") else None
+            if locked_until and now < locked_until:
+                return None
+            _, candidate = _password_hash(password, account["password_salt"])
+            valid = account.get("active", False) and hmac.compare_digest(candidate, account["password_hash"])
+            if not valid:
+                account["failed_attempts"] = account.get("failed_attempts", 0) + 1
+                if account["failed_attempts"] >= MAX_FAILED_ATTEMPTS:
+                    account["locked_until"] = (now + timedelta(minutes=LOCK_MINUTES)).isoformat()
+                    account["failed_attempts"] = 0
+                self._save(data)
+                return None
+            account["failed_attempts"] = 0
+            account["locked_until"] = None
             self._save(data)
-            return None
-        account["failed_attempts"] = 0
-        account["locked_until"] = None
-        self._save(data)
-        token = secrets.token_urlsafe(32)
-        self.sessions[token] = {"account_id": account["account_id"], "expires_at": now + timedelta(hours=SESSION_HOURS)}
-        return token
+            token = secrets.token_urlsafe(32)
+            self.sessions[token] = {"account_id": account["account_id"], "expires_at": now + timedelta(hours=SESSION_HOURS)}
+            return token
 
     def require(self, token, permission=None):
         session = self.sessions.get(token)

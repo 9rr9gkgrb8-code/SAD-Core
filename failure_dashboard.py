@@ -1,11 +1,28 @@
-"""Normalized failure inbox and approval-gated owner/developer workflow."""
+"""Durable normalized Failure Inbox and shared Owner/Dev dashboard workflow."""
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
+import os
+from pathlib import Path
 import uuid
+import threading
+from functools import wraps
+
+from sad_forge_contract import Artifact, ForgeResult, RepairRequest
+
+
+DASHBOARD_STATE_FILE = Path(__file__).with_name("dashboard_state.json")
+
+
+def synchronized(method):
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self.lock:
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 class FailureState(str, Enum):
@@ -13,6 +30,7 @@ class FailureState(str, Enum):
     IN_REVIEW = "in_review"
     DISMISSED = "dismissed"
     PUSHED_TO_DEVELOPMENT = "pushed_to_development"
+    CLOSED = "closed"
 
 
 class DevState(str, Enum):
@@ -23,7 +41,6 @@ class DevState(str, Enum):
     AWAITING_HUMAN_DECISION = "awaiting_human_decision"
     APPROVED = "approved"
     REJECTED = "rejected"
-    ROLLED_BACK = "rolled_back"
     CLOSED = "closed"
 
 
@@ -41,10 +58,8 @@ class FailureEvent:
     signature: str = ""
 
     def __post_init__(self):
-        if self.source not in {"sad", "forge", "test", "user"}:
-            raise ValueError("Failure source must be sad, forge, test, or user.")
-        if not self.evidence:
-            raise ValueError("Normalized failures require evidence.")
+        if self.source not in {"sad", "forge", "test", "user"} or not self.evidence:
+            raise ValueError("Failure source and evidence are required.")
         if not isinstance(self.category, str) or not 1 <= len(self.category) <= 100:
             raise ValueError("Failure category must be 1-100 characters.")
         if not isinstance(self.summary, str) or not 1 <= len(self.summary) <= 10_000:
@@ -53,11 +68,9 @@ class FailureEvent:
             raise ValueError("Suggested correction is too large.")
         if len(self.evidence) > 100 or len(json.dumps(self.evidence)) > 1_000_000:
             raise ValueError("Failure evidence exceeds the safe limit.")
-        if len(self.affected_files) > 100 or any(not isinstance(path, str) or len(path) > 500 for path in self.affected_files):
-            raise ValueError("Affected file metadata exceeds the safe limit.")
         if not self.signature:
-            raw = f"{self.category}\0{self.summary.strip().lower()}"
-            self.signature = hashlib.sha256(raw.encode()).hexdigest()
+            normalized = " ".join(self.summary.lower().split())
+            self.signature = hashlib.sha256(f"{self.category}\0{normalized}".encode()).hexdigest()
 
 
 @dataclass
@@ -65,55 +78,189 @@ class DevWorkItem:
     work_item_id: str
     failure_id: str
     state: str = DevState.TRIAGED.value
+    request: dict | None = None
+    result: dict | None = None
     artifacts: list[dict] = field(default_factory=list)
+    evidence: list[dict] = field(default_factory=list)
     human_decision: str | None = None
+    assigned_to: str | None = None
 
 
 class FailureDashboard:
-    """One dashboard; role permissions determine available authority."""
+    """One durable workflow; authentication determines available actions."""
 
-    def __init__(self, auth_service=None):
+    def __init__(self, auth_service=None, state_file=None):
         self.auth_service = auth_service
+        self.state_file = Path(state_file) if state_file else None
         self.failures = {}
         self.by_signature = {}
         self.dev_items = {}
+        self.event_sequence = 0
+        self.lock = threading.RLock()
+        self._load()
 
+    def _load(self):
+        if not self.state_file or not self.state_file.exists():
+            return
+        data = json.loads(self.state_file.read_text(encoding="utf-8"))
+        if data.get("schema_version") != 1:
+            raise ValueError("Unsupported dashboard state schema.")
+        self.event_sequence = data.get("event_sequence", 0)
+        for raw in data.get("failures", []):
+            event = FailureEvent(**raw)
+            self.failures[event.failure_id] = event
+            self.by_signature[event.signature] = event.failure_id
+        for raw in data.get("development", []):
+            item = DevWorkItem(**raw)
+            self.dev_items[item.work_item_id] = item
+
+    def _save(self):
+        if not self.state_file:
+            return
+        data = {
+            "schema_version": 1, "event_sequence": self.event_sequence,
+            "failures": [asdict(item) for item in self.failures.values()],
+            "development": [asdict(item) for item in self.dev_items.values()],
+        }
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.state_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        try:
+            os.chmod(temporary, 0o600)
+        except OSError:
+            pass
+        os.replace(temporary, self.state_file)
+
+    def _evidence(self, event, actor, details=None):
+        self.event_sequence += 1
+        return {
+            "sequence": self.event_sequence,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": event, "actor": actor, "details": details or {},
+        }
+
+    def _require(self, token, permission):
+        if self.auth_service is None:
+            raise PermissionError("Dashboard access requires authentication.")
+        return self.auth_service.require(token, permission)
+
+    @synchronized
     def ingest(self, event):
         existing_id = self.by_signature.get(event.signature)
         if existing_id:
             existing = self.failures[existing_id]
             existing.evidence.extend(event.evidence)
+            existing.evidence.append(self._evidence("failure_deduplicated", event.source))
+            self._save()
             return existing
+        event.evidence.append(self._evidence("failure_ingested", event.source))
         self.failures[event.failure_id] = event
         self.by_signature[event.signature] = event.failure_id
+        self._save()
         return event
 
-    def _require_governance(self, actor_token):
-        if self.auth_service is None:
-            raise PermissionError("Dashboard governance requires an authentication service.")
-        return self.auth_service.require(actor_token, "development:govern")
+    @synchronized
+    def mark_in_review(self, failure_id, token):
+        actor = self._require(token, "development:review")
+        failure = self.failures[failure_id]
+        if failure.state != FailureState.NEW.value:
+            raise ValueError("Only new failures may enter review.")
+        failure.state = FailureState.IN_REVIEW.value
+        failure.evidence.append(self._evidence("failure_reviewed", actor["account_id"]))
+        self._save()
+        return failure
 
+    @synchronized
     def push_to_development(self, failure_id, actor_token, explicitly_approved=False):
-        self._require_governance(actor_token)
+        actor = self._require(actor_token, "development:govern")
         if not explicitly_approved:
-            raise PermissionError("Only an owner may explicitly push a failure to development.")
+            raise PermissionError("Explicit owner approval is required.")
         failure = self.failures[failure_id]
         existing = next((item for item in self.dev_items.values() if item.failure_id == failure_id), None)
         if existing:
             return existing
         item = DevWorkItem(str(uuid.uuid4()), failure_id)
+        item.evidence.append(self._evidence("pushed_to_development", actor["account_id"]))
         self.dev_items[item.work_item_id] = item
         failure.state = FailureState.PUSHED_TO_DEVELOPMENT.value
+        self._save()
         return item
 
-    def approve_isolated_work(self, work_item_id, actor_token):
-        self._require_governance(actor_token)
+    @synchronized
+    def approve_isolated_work(self, work_item_id, actor_token, source_snapshot="unknown"):
+        actor = self._require(actor_token, "development:govern")
         item = self.dev_items[work_item_id]
+        if item.state != DevState.TRIAGED.value:
+            raise ValueError("Only triaged work may be approved for isolation.")
+        failure = self.failures[item.failure_id]
+        request = RepairRequest(
+            failure_id=failure.failure_id,
+            objective=failure.suggested_correction or failure.summary,
+            source_snapshot=source_snapshot,
+            sandbox_scope="isolated_container",
+            allowed_targets=tuple(failure.affected_files or ["app.py"]),
+            test_plan=("python -m unittest -v",),
+            approval_state="approved_for_isolated_work",
+        )
+        item.request = request.to_dict()
         item.state = DevState.APPROVED_FOR_ISOLATED_WORK.value
+        item.evidence.append(self._evidence("isolated_work_approved", actor["account_id"], {"request_id": request.request_id}))
+        self._save()
         return item
 
+    @synchronized
+    def start_forge(self, work_item_id, token):
+        actor = self._require(token, "development:work")
+        item = self.dev_items[work_item_id]
+        if item.state != DevState.APPROVED_FOR_ISOLATED_WORK.value:
+            raise ValueError("Work is not approved for Forge.")
+        item.state = DevState.IN_FORGE.value
+        item.assigned_to = actor["account_id"]
+        item.evidence.append(self._evidence("forge_started", actor["account_id"]))
+        self._save()
+        return item
+
+    @synchronized
+    def record_forge_result(self, work_item_id, result, token):
+        actor = self._require(token, "development:work")
+        item = self.dev_items[work_item_id]
+        if not item.request or result.request_id != item.request["request_id"] or result.correlation_id != item.request["correlation_id"]:
+            raise ValueError("Forge result does not correlate to this work item.")
+        item.result = result.to_dict()
+        item.artifacts = [artifact.to_dict() for artifact in result.artifacts]
+        item.state = DevState.AWAITING_HUMAN_DECISION.value if result.state in {"succeeded", "failed"} else DevState.VERIFYING.value
+        item.evidence.append(self._evidence("forge_result_recorded", actor["account_id"], {"state": result.state}))
+        self._save()
+        return item
+
+    @synchronized
+    def decide(self, work_item_id, decision, token):
+        permission = "development:decide" if decision in {"approve", "reject"} else "development:govern"
+        actor = self._require(token, permission)
+        item = self.dev_items[work_item_id]
+        if item.state != DevState.AWAITING_HUMAN_DECISION.value:
+            raise ValueError("Work is not awaiting a human decision.")
+        if decision not in {"approve", "reject"}:
+            raise ValueError("Decision must be approve or reject.")
+        item.human_decision = decision
+        item.state = DevState.APPROVED.value if decision == "approve" else DevState.REJECTED.value
+        item.evidence.append(self._evidence(f"human_{decision}", actor["account_id"]))
+        self._save()
+        return item
+
+    @synchronized
+    def close(self, work_item_id, token):
+        actor = self._require(token, "development:govern")
+        item = self.dev_items[work_item_id]
+        if item.state not in {DevState.APPROVED.value, DevState.REJECTED.value}:
+            raise ValueError("Only decided work may close.")
+        item.state = DevState.CLOSED.value
+        self.failures[item.failure_id].state = FailureState.CLOSED.value
+        item.evidence.append(self._evidence("work_closed", actor["account_id"]))
+        self._save()
+        return item
+
+    @synchronized
     def snapshot(self, actor_token):
-        if self.auth_service is None:
-            raise PermissionError("Dashboard reads require an authentication service.")
-        self.auth_service.require(actor_token, "development:view")
+        self._require(actor_token, "development:view")
         return {"failures": [asdict(item) for item in self.failures.values()], "development": [asdict(item) for item in self.dev_items.values()]}

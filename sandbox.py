@@ -16,7 +16,8 @@ PROJECT_DIRECTORY = Path(__file__).parent
 SANDBOX_DIRECTORY = PROJECT_DIRECTORY / ".sad_sandbox"
 ALLOWED_TARGET_FILES = {"app.py", "evaluator.py", "personality.py", "settings.py"}
 PROTECTED_GIT_PATHS = (
-    "HEAD", "config", "commondir", "config.worktree", "hooks", "modules"
+    "HEAD", "config", "commondir", "config.worktree", "hooks", "modules",
+    "refs", "packed-refs", "index", "worktrees", "info",
 )
 GIT_CREDENTIAL_ENVIRONMENT = {"GITHUB_TOKEN", "GH_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK"}
 SAFE_WORKER_ENVIRONMENT = {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "LANG", "LC_ALL", "PYTHONUTF8"}
@@ -80,6 +81,8 @@ def snapshot_git_topology():
     """Fingerprint the repository control plane independently of source files."""
     git_dir = _git_directory()
     manifest = {"git_dir": str(git_dir) if git_dir else None}
+    dot_git = PROJECT_DIRECTORY / ".git"
+    manifest["dot_git_pointer"] = _hash_file(dot_git) if dot_git.is_file() else None
     if not git_dir:
         return manifest
     for name in PROTECTED_GIT_PATHS:
@@ -135,7 +138,8 @@ def create_sandbox_proposal(failure_id, target_file, proposal_summary):
         raise ValueError("The target file is not approved for sandbox proposals.")
 
     proposal_id = str(uuid.uuid4())
-    sandbox_path = SANDBOX_DIRECTORY / proposal_id
+    SANDBOX_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / proposal_id, must_exist=False)
     sandbox_path.mkdir(parents=True)
 
     for source_file in PROJECT_DIRECTORY.glob("*.py"):

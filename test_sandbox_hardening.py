@@ -59,6 +59,21 @@ class SandboxHardeningTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sandbox._validate_patch_scope("GIT binary patch", "app.py")
 
+    def test_isolation_failure_blocks_approval_and_export(self):
+        with patch.object(sandbox, "SANDBOX_DIRECTORY", self.sandbox_root):
+            proposal = {
+                "proposal_id": "00000000-0000-0000-0000-000000000001",
+                "failure_id": "failure", "target_file": "app.py",
+                "status": "isolation_failed", "draft_diff": "--- original/app.py\n+++ proposed/app.py\n",
+            }
+            path = self.sandbox_root / proposal["proposal_id"]
+            path.mkdir()
+            (path / "app.py").write_text("pass\n", encoding="utf-8")
+            (path / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
+            self.assertIsNone(sandbox.approve_sandbox_proposal(proposal["proposal_id"]))
+            with self.assertRaises(ValueError):
+                sandbox.export_approved_patch(proposal["proposal_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

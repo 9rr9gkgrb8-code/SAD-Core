@@ -37,6 +37,8 @@ class DockerSandboxRunner:
         if not PINNED_IMAGE.fullmatch(self.image):
             raise SandboxUnavailable("SAD_SANDBOX_IMAGE must be pinned as name@sha256:<64 lowercase hex characters>.")
         workspace = Path(workspace).resolve(strict=True)
+        if self.executable.resolve().is_relative_to(workspace):
+            raise SandboxUnavailable("The container runtime cannot come from the untrusted workspace.")
         if "," in str(workspace):
             raise SandboxUnavailable("Docker bind source paths cannot contain commas.")
         inspect = subprocess.run(

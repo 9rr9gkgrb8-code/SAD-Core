@@ -93,6 +93,14 @@ local copy. Do not commit the `local_data` folder.
 python app.py
 ```
 
+Run the loopback-only JSON API after local owner setup:
+
+```powershell
+python api.py
+```
+
+See `API.md` for the stable v1 endpoints and role requirements.
+
 ## Run tests
 
 ```powershell

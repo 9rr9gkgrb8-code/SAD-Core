@@ -44,7 +44,7 @@ class AuthTests(unittest.TestCase):
 
     def test_owner_can_create_all_future_roles(self):
         token = self.owner_token()
-        for username, role in (("student", "student"), ("teacher", "teacher"), ("developer", "developer")):
+        for username, role in (("student", "student"), ("teacher", "teacher"), ("developer", "developer"), ("reviewer", "reviewer"), ("viewer", "viewer")):
             created = self.auth.create_account(username, f"Strong{role}123", role, token)
             self.assertEqual(created["role"], role)
 

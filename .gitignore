@@ -6,3 +6,5 @@ settings.json
 local_data/
 .env
 accounts.json
+dashboard_state.json
+student_progress.json
