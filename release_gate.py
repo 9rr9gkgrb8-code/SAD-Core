@@ -10,6 +10,7 @@ REQUIRED_PATHS = (
     ".github/workflows/ci.yml",
     "ALPHA1.md",
     "ALPHA_UAT.md",
+    "MOBILE.md",
     "SECURITY.md",
     "alpha.py",
     "alpha_doctor.py",
@@ -20,19 +21,30 @@ REQUIRED_PATHS = (
     "failure_dashboard.py",
     "forge_worker.py",
     "live_apply.py",
+    "mobile.py",
+    "mobile_access.py",
+    "mobile_doctor.py",
+    "mobile_gateway.py",
     "repair_planner.py",
     "sandbox.py",
     "test_alpha_doctor.py",
     "test_alpha_product.py",
     "test_forge_game_ui.py",
     "test_live_repair.py",
+    "test_mobile_access.py",
+    "test_mobile_gateway.py",
+    "test_mobile_pwa.py",
     "test_owner_repair_ui.py",
     "test_web_accessibility.py",
     "web/app.js",
+    "web/icon.svg",
     "web/index.html",
+    "web/manifest.webmanifest",
+    "web/mobile.js",
     "web/owner_dashboard.css",
     "web/owner_dashboard.js",
     "web/styles.css",
+    "web/sw.js",
 )
 
 # Construct retired markers from fragments so the gate does not match itself.
@@ -47,7 +59,7 @@ RETIRED_MARKERS = (
 
 TEXT_SUFFIXES = {
     ".py", ".md", ".json", ".yml", ".yaml", ".txt",
-    ".js", ".html", ".css",
+    ".js", ".html", ".css", ".svg", ".webmanifest",
 }
 EXCLUDED_PARTS = {".git", ".sad_sandbox", "local_data", "__pycache__"}
 
