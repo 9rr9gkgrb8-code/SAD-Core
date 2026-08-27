@@ -16,6 +16,7 @@ REQUIRED_PATHS = (
     "api.py",
     "auth.py",
     "container_sandbox.py",
+    "docker_proof.py",
     "failure_dashboard.py",
     "forge_worker.py",
     "sandbox.py",
