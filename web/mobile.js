@@ -2,11 +2,11 @@
 (()=>{
   const LOOPBACK=new Set(["127.0.0.1","localhost","::1"]);
   const remote=!LOOPBACK.has(location.hostname);
-  let deviceToken=localStorage.getItem("sad_device_token")||"";
+  let pairedMarker=localStorage.getItem("sad_device_paired")==="1";
   let installPrompt=null;
   const byId=id=>document.getElementById(id);
 
-  function headers(){return deviceToken?{"X-SAD-Device":deviceToken}:{}}
+  function headers(){return {}}
   function showPairing(error=""){
     const pairing=byId("pairing"),login=byId("login"),app=byId("app");
     if(pairing)pairing.hidden=false;
@@ -19,19 +19,27 @@
     if(pairing)pairing.hidden=true;
     if(login)login.hidden=false;
   }
-  function forgetDevice(){
-    deviceToken="";
-    localStorage.removeItem("sad_device_token");
+  async function forgetDevice(){
+    try{if(remote)await fetch("/mobile/forget",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})}catch(_error){}
+    pairedMarker=false;
+    localStorage.removeItem("sad_device_paired");
     sessionStorage.removeItem("sad_token");
     location.reload();
   }
-  function ensurePaired(){
-    if(remote&&!deviceToken){showPairing();return false}
-    showLogin();return true;
+  async function ensurePaired(){
+    if(!remote){showLogin();return true}
+    if(!pairedMarker){showPairing();return false}
+    try{
+      const response=await fetch("/mobile/status",{cache:"no-store"});
+      if(!response.ok)throw new Error("pairing unavailable");
+      showLogin();return true;
+    }catch(_error){
+      pairedMarker=false;localStorage.removeItem("sad_device_paired");showPairing("This phone needs to be paired again.");return false;
+    }
   }
   function handleApiError(text){
     if(remote&&/device_pairing_required|not paired|access has expired/i.test(String(text))){
-      deviceToken="";localStorage.removeItem("sad_device_token");showPairing("This phone needs to be paired again.");return true;
+      pairedMarker=false;localStorage.removeItem("sad_device_paired");showPairing("This phone needs to be paired again.");return true;
     }
     return false;
   }
@@ -44,15 +52,14 @@
       const response=await fetch("/mobile/pair",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const data=await response.json();
       if(!response.ok)throw new Error(data.error||"Pairing failed");
-      deviceToken=data.device_token;
-      localStorage.setItem("sad_device_token",deviceToken);
+      pairedMarker=true;localStorage.setItem("sad_device_paired","1");
       byId("paired-device").textContent=`Paired: ${data.device.label} (${data.device.mode.replaceAll("_"," ")})`;
       pairingForm.reset();showLogin();
     }catch(error){byId("pairing-error").textContent=error.message}
   });
 
   const forget=byId("forget-device");
-  if(forget)forget.addEventListener("click",forgetDevice);
+  if(forget){forget.hidden=!remote;forget.addEventListener("click",forgetDevice)}
 
   const state=byId("connection-state");
   function updateConnection(){if(state){state.textContent=navigator.onLine?"Online":"Offline";state.classList.toggle("offline",!navigator.onLine)}}
