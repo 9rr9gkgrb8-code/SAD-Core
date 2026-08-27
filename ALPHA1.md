@@ -27,7 +27,9 @@ Each person receives a separate credential. Students never see developer control
 ## Included surfaces
 
 - Personal Study with all request-directed actions and optional local-model output
-- Forge Student quests, hints, boss checks, XP, ranks, and companion progression
+- Forge Student game-first learning surface with a quest board, active quest view,
+  progressive hint ladder, boss gate, real XP/rank progress, mastery path, and
+  companion evolution driven by durable Forge progress
 - Teacher student-progress roster
 - Owner account administration
 - Shared role-filtered Failure Inbox and Forge job dashboard
