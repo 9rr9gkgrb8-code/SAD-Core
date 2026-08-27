@@ -7,8 +7,9 @@ sandbox configuration. The doctor reports Alpha core readiness separately from
 repair-isolation readiness.
 
 - `ALPHA CORE: READY` means the local browser product can be started.
-- An unconfigured local model is optional for normal Alpha use, but automatic Forge
-  repair drafting requires a configured loopback-only local model.
+- An unconfigured local model is optional for normal Alpha use. SAD Chat falls back
+  visibly to the built-in dialogue layer, while automatic Forge repair drafting
+  requires a configured loopback-only local model.
 - `REPAIR ISOLATION: BLOCKED` means Forge repair execution remains disabled until
   Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. It does
   not silently fall back to same-user execution.
@@ -33,6 +34,9 @@ Each person receives a separate credential. Students never see developer control
 
 ## Included surfaces
 
+- **SAD Chat** as the default free-form conversation lane, with durable per-account
+  conversations, new/archive/history controls, recent-turn context, and visible
+  `Local AI` versus `Built-in dialogue` response status
 - Personal Study with all request-directed actions and optional local-model output
 - Forge Student game-first learning surface with a quest board, active quest view,
   progressive hint ladder, boss gate, real XP/rank progress, mastery path, and
@@ -49,9 +53,25 @@ Each person receives a separate credential. Students never see developer control
 - Shared role-filtered Failure Inbox and Forge job dashboard with advanced review,
   push, isolation approval, execution, decision, and close controls
 - Optional Mobile Preview with installable PWA shell, one-time Owner pairing,
-  revocable paired-device trust, learning-only/full-role modes, and TLS-only private
-  gateway while the core API stays on loopback
+  revocable paired-device trust, learning-only/full-role modes, SAD Chat, and a
+  TLS-only private gateway while the core API stays on loopback
 - Password change and session revocation
+
+## SAD Chat boundary
+
+SAD Chat is conversation, not an authority bypass.
+
+- Every chat session belongs to one authenticated account.
+- Another account receives not-found/denial even if it knows the session ID.
+- `chat_history.json` stays on the host, is excluded from Git, uses atomic writes,
+  and is bounded so an oversized history fails before replacing the saved file.
+- The configured local model receives only recent turns needed for conversational
+  context rather than the entire saved transcript on every request.
+- If the local model is not available, SAD explicitly labels the answer as built-in
+  dialogue rather than pretending a full model generated it.
+- Conversation text cannot approve repairs, apply files, commit, push, merge, or
+  otherwise exercise governed authority. Those actions remain behind the dashboard
+  and their existing explicit role/approval checks.
 
 ## Repair authority boundary
 
@@ -77,33 +97,35 @@ Pairing a phone does not create a user session. The phone must first prove a val
 paired-device credential and then the person must sign in through the normal SAD
 authentication system.
 
-`learning` mode allows only account-self, Personal Study, Forge play, and own progress.
-`full_role` mode allows the normal route surface, but the signed-in account still has
-exactly its existing SAD permissions. Device credentials are revocable and kept from
-browser JavaScript in a Secure/HttpOnly/SameSite=Strict cookie.
+`learning` mode allows SAD Chat plus account-self, Personal Study, Forge play, and own
+progress through an explicit route allow-list. `full_role` mode allows the normal
+route surface, but the signed-in account still has exactly its existing SAD
+permissions. Device credentials are revocable and kept from browser JavaScript in a
+Secure/HttpOnly/SameSite=Strict cookie.
 
-The mobile service worker never caches API, pairing, student, account, repair, session,
-or device-credential traffic.
+The mobile service worker never caches API, pairing, chat, student, account, repair,
+session, or device-credential traffic.
 
 ## Acceptance
 
 Before widening a local pilot, run the scenarios in `ALPHA_UAT.md`. They cover every
-role, security boundaries, keyboard and screen-reader use, zoom/mobile layout, stop
-conditions, and the evidence required before calling a candidate Alpha-ready.
+role, SAD Chat account isolation and authority separation, security boundaries,
+keyboard and screen-reader use, zoom/mobile layout, stop conditions, and the evidence
+required before calling a candidate Alpha-ready.
 
 Automated accessibility checks run with the normal unit suite, but they are a
 regression net rather than a substitute for the manual accessibility pass.
 
 Mobile Preview also requires host/phone validation of TLS trust, pairing, revocation,
-learning-mode route isolation, full-role RBAC, install/home-screen behavior, and
-narrow-screen use before it should be treated as operational on that device.
+SAD Chat, learning-mode route isolation, full-role RBAC, install/home-screen behavior,
+and narrow-screen use before it should be treated as operational on that device.
 
 ## Private data and backups
 
-`accounts.json`, `dashboard_state.json`, `student_progress.json`, `failures.json`,
-`.env`, `local_data/`, and `.sad_sandbox/` are local runtime data and are ignored by
-Git. Stop the app before copying those files into an encrypted backup. Never put
-that backup in the public repository.
+`accounts.json`, `dashboard_state.json`, `student_progress.json`, `chat_history.json`,
+`failures.json`, `.env`, `local_data/`, and `.sad_sandbox/` are local runtime data and
+are ignored by Git. Stop the app before copying those files into an encrypted backup.
+Never put that backup in the public repository.
 
 The `.sad_sandbox/<proposal-id>/` directory also retains the approved patch and local
 pre-application backup used for repair evidence/rollback. Treat it as private runtime
