@@ -25,6 +25,10 @@ Updated: August 27, 2026
 - Personal Study exposes all requested help modes without a forced quiz loop.
 - Forge Student exposes quests, homework conversion, hints, mastery, XP/ranks,
   companion state, boss checks and durable progress for student/teacher dashboards.
+- Forge Student now presents those mechanics through a game-first Alpha interface:
+  companion evolution, real XP-to-rank progress, a mastery path, quest board, active
+  quest view, progressive hint ladder, and boss gate. Frontend rank thresholds are
+  regression-tested against the backend progression contract.
 - Local per-user authentication uses salted PBKDF2 hashes, expiring sessions,
   lockout, owner-controlled privileged account creation and no shared credential.
 - GitHub CI compiles the project and runs the full test/contract/security suite.
