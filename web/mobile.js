@@ -5,6 +5,10 @@
   let pairedMarker=localStorage.getItem("sad_device_paired")==="1";
   let installPrompt=null;
   const byId=id=>document.getElementById(id);
+  const SURFACE_ASSETS={
+    chat:{css:"/ui/chat.css",js:"/ui/chat.js"},
+    developer_workspace:{css:"/ui/developer_workspace.css",js:"/ui/developer_workspace.js"},
+  };
 
   function headers(){return {}}
   function showPairing(error=""){
@@ -79,12 +83,12 @@
   }
 
   function loadSurface(name){
-    const css=`/ui/${name}.css`,js=`/ui/${name}.js`;
-    if(!document.querySelector(`link[href="${css}"]`)){
-      const style=document.createElement("link");style.rel="stylesheet";style.href=css;document.head.appendChild(style);
+    const asset=SURFACE_ASSETS[name];if(!asset)return;
+    if(!document.querySelector(`link[href="${asset.css}"]`)){
+      const style=document.createElement("link");style.rel="stylesheet";style.href=asset.css;document.head.appendChild(style);
     }
-    if(!document.querySelector(`script[src="${js}"]`)){
-      const script=document.createElement("script");script.src=js;script.async=false;document.head.appendChild(script);
+    if(!document.querySelector(`script[src="${asset.js}"]`)){
+      const script=document.createElement("script");script.src=asset.js;script.async=false;document.head.appendChild(script);
     }
   }
   loadSurface("chat");
