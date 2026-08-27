@@ -4,23 +4,24 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import json
 import mimetypes
 import os
 from pathlib import Path
-import re
 import ssl
 import threading
 
 from api import MAX_REQUEST_BYTES, SadApiService
-from mobile_access import MobileAccessStore
+from mobile_access import DEVICE_DAYS, MobileAccessStore
 
 
 DEFAULT_MOBILE_PORT = 8766
 PAIR_FAILURE_LIMIT = 10
 PAIR_FAILURE_WINDOW_MINUTES = 5
+DEVICE_COOKIE = "SAD_DEVICE"
 TRUSTED_SHARED_V4 = ipaddress.ip_network("100.64.0.0/10")
 LEARNING_EXACT_ROUTES = {
     ("GET", "/health"),
@@ -92,7 +93,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
     access = None
     limiter = None
 
-    def _respond(self, status, payload):
+    def _respond(self, status, payload, extra_headers=None):
         encoded = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -100,6 +101,8 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -152,21 +155,42 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
             self.limiter.failed(address)
             raise
         self.limiter.succeeded(address)
-        return self._respond(200, result)
+        raw_token = result.pop("device_token")
+        cookie = (
+            f"{DEVICE_COOKIE}={raw_token}; Path=/; Max-Age={DEVICE_DAYS * 86400}; "
+            "Secure; HttpOnly; SameSite=Strict"
+        )
+        return self._respond(200, result, {"Set-Cookie": cookie})
+
+    def _cookie_device_token(self):
+        jar = SimpleCookie()
+        jar.load(self.headers.get("Cookie", ""))
+        item = jar.get(DEVICE_COOKIE)
+        return item.value if item else ""
 
     def _paired_device(self):
-        raw = self.headers.get("X-SAD-Device", "")
+        raw = self._cookie_device_token() or self.headers.get("X-SAD-Device", "")
         if not raw:
             raise PermissionError("device_pairing_required")
         return self.access.require_device(raw)
+
+    def _forget(self):
+        device = self._paired_device()
+        self.access.revoke_device(device["device_id"])
+        clear = f"{DEVICE_COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict"
+        return self._respond(200, {"forgotten": True}, {"Set-Cookie": clear})
 
     def _handle(self):
         try:
             if self.command == "GET" and (self.path in {"/", "/manifest.webmanifest", "/sw.js"} or self.path.startswith("/ui/")):
                 return self._serve_ui()
+            if self.command == "GET" and self.path == "/mobile/status":
+                return self._respond(200, {"device": self._paired_device()})
             body = self._body()
             if self.command == "POST" and self.path == "/mobile/pair":
                 return self._pair(body)
+            if self.command == "POST" and self.path == "/mobile/forget":
+                return self._forget()
             device = self._paired_device()
             if not mobile_route_allowed(device["mode"], self.command, self.path):
                 raise PermissionError("This paired phone is not authorized for that mobile route.")
@@ -190,8 +214,11 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
 
 
 def _validated_tls_file(value, label):
-    path = Path(value).expanduser().resolve()
-    if path.is_symlink() or not path.is_file():
+    original = Path(value).expanduser()
+    if original.is_symlink():
+        raise ValueError(f"{label} must not be a symlink.")
+    path = original.resolve()
+    if not path.is_file():
         raise ValueError(f"{label} must be an existing regular file.")
     return path
 
