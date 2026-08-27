@@ -20,6 +20,13 @@ the normal SAD API remains on loopback.
 - `GET /v1/chat/sessions/{session_id}` — load one owned conversation
 - `POST /v1/chat/sessions/{session_id}/messages` — send one message and persist the SAD reply
 - `POST /v1/chat/sessions/{session_id}/archive` — archive an owned conversation
+- `POST /v1/dev/workspaces/scope` — Owner/Developer asks the local model for file-scope suggestions only
+- `GET /v1/dev/workspaces` — development roles list coding workspaces
+- `POST /v1/dev/workspaces` — Owner/Developer creates an isolated workspace from an explicitly approved scope
+- `GET /v1/dev/workspaces/{workspace_id}` — development roles inspect task, scope, diff, tests, and evidence
+- `POST /v1/dev/workspaces/{workspace_id}/execute` — Owner/Developer generates scoped code and runs Docker verification
+- `POST /v1/dev/workspaces/{workspace_id}/apply` — Owner-only live application of the exact tested file set
+- `POST /v1/dev/workspaces/{workspace_id}/rollback` — Owner-only verified rollback of an applied workspace
 - `GET /v1/accounts` (owner)
 - `POST /v1/accounts` (role-permitted account creation)
 - `POST /v1/accounts/{account_id}/active` (owner)
@@ -37,7 +44,7 @@ the normal SAD API remains on loopback.
 - `POST /v1/failures/{failure_id}/push`
 - `POST /v1/jobs/{work_item_id}/approve-isolated`
 - `POST /v1/jobs/{work_item_id}/start`
-- `POST /v1/jobs/{work_item_id}/execute` (host-controlled draft + isolated verification)
+- `POST /v1/jobs/{work_item_id}/execute` (host-controlled repair draft + isolated verification)
 - `POST /v1/jobs/{work_item_id}/result`
 - `POST /v1/jobs/{work_item_id}/decision`
 - `POST /v1/jobs/{work_item_id}/close`
@@ -56,8 +63,67 @@ Study, Forge quests, and the governed repair workflow.
   and report `engine: local_model`.
 - If the local model is unavailable, SAD falls back to its built-in dialogue layer and
   reports `engine: built_in` rather than pretending a model-generated answer occurred.
-- Conversation text does not grant tool, repair, approval, or Git authority. Those
-  actions remain behind their existing explicit governed endpoints.
+- Conversation text does not grant tool, repair, approval, coding-workspace, or Git
+  authority. Those actions remain behind their existing explicit governed endpoints.
+
+## Developer Workspace semantics
+
+Developer Workspace is SAD's general multi-file coding lane. It does not replace the
+narrow failure-driven repair workflow.
+
+### Scope planning
+
+`POST /v1/dev/workspaces/scope` requires `development:work`. The local model receives
+the task plus eligible project file names and may suggest up to 20 source paths. It
+writes no code and persists no workspace. The returned paths are recommendations for
+human review only.
+
+### Workspace creation
+
+`POST /v1/dev/workspaces` requires `development:work` and accepts:
+
+```json
+{
+  "task": "Build the feature",
+  "allowed_paths": ["api.py", "web/app.js", "test_feature.py"]
+}
+```
+
+Creation captures source hashes and makes a private `.sad_dev/<uuid>/worktree` copy.
+Git control metadata, `.github`, private runtime JSON, credentials, environment
+secrets, local data, and other protected paths are excluded from the coding copy.
+
+### Execution
+
+`POST /v1/dev/workspaces/{id}/execute` requires `development:work`.
+
+The configured local model receives source context only for the explicitly approved
+paths. It returns a strict JSON full-file edit plan. SAD rejects unapproved paths,
+duplicate edits, malformed JSON, no-op edits, unsupported/binary file types, and
+oversized context/output.
+
+Edits occur only inside the private worktree. SAD then runs the repository unittest
+suite through the same digest-pinned, networkless, non-root Docker boundary used by
+repair verification. The response includes the exact unified diff, changed path list,
+test output, and integrity evidence. Failed or unavailable isolation never becomes an
+applyable state.
+
+### Application and rollback
+
+`POST /v1/dev/workspaces/{id}/apply` requires Owner-only `development:govern`.
+Developer, Reviewer, Viewer, Student, Teacher, and the coding model cannot call the
+live application boundary successfully.
+
+Before the first write SAD verifies every changed live path still matches its captured
+base hash and every worktree path still matches the exact post-test hash. Existing
+files are backed up. The exact tested file set is then applied. If any file operation
+or verification fails, SAD restores and verifies the whole original set.
+
+`POST /v1/dev/workspaces/{id}/rollback` is also Owner-only and refuses rollback if a
+live target changed after application. Git commands are never invoked by either
+operation.
+
+See `DEVELOPER_WORKSPACE.md` for the complete contract.
 
 ## Mobile gateway endpoints
 
@@ -72,13 +138,14 @@ creates a user session and never substitutes for SAD role authorization.
 
 ### Mobile device modes
 
-- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix.
+- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix. Developer Workspace routes are denied.
 - `full_role`: the gateway admits the normal API surface, then SAD's existing RBAC
-  decides what the signed-in role may actually do.
+  decides what the signed-in role may actually do. An Owner can use Code Workspace;
+  a Developer can prepare/test but still cannot apply; lower roles retain their limits.
 
 The device credential is hashed at rest and is never available to browser JavaScript.
 The service worker excludes `/v1/*` and `/mobile/*` traffic, including conversation
-requests and replies, from caching.
+and Developer Workspace API data, from caching.
 
 ### Repair decision semantics
 
@@ -109,5 +176,5 @@ For `decision: approve`:
 - `GET /v1/forge/progress/{student_account_id}` (teacher/owner)
 
 SAD owns approval, live application, and closure. Forge may draft and test approved
-work and return correlated artifacts, diagnostics, and tests; it has no API action
-for approval, Git commit, push, or merge authority.
+repair work; the general coding agent may draft and test approved Developer Workspace
+scope. Neither has API authority for Owner approval, Git commit, push, or merge.
