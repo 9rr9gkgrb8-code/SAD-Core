@@ -35,6 +35,12 @@ Updated: August 27, 2026
   full unit suite, Alpha release gate, and operator preflight all green.
 - Alpha operator preflight reports core readiness separately from optional local-model
   configuration and Docker-backed repair-isolation readiness.
+- GitHub Actions now performs a real Docker isolation proof after the core gate. The
+  workflow explicitly preloads a Python image, resolves its immutable repository
+  digest, requires `REPAIR ISOLATION: READY`, and executes a disposable test workspace
+  through `DockerSandboxRunner` with the production boundary. The proof verifies
+  non-root execution, a read-only workspace, writable tmpfs, stripped GitHub
+  credentials, and unavailable external networking.
 - Alpha 1 browser UI provides separate role-filtered Personal Study, Forge Student,
   teacher roster, Owner/Dev dashboard, account control, and security surfaces.
 - Browser accessibility structure now has automated regression checks for form
@@ -51,10 +57,9 @@ Updated: August 27, 2026
 
 ## Remaining operational work
 
-- Install Docker on the deployment machine, preload a reviewed Python image and set
-  `SAD_SANDBOX_IMAGE` to its exact `name@sha256:<digest>`. This environment has no
-  Docker/Podman, so real container execution cannot be demonstrated here; the
-  production path records `isolation_unavailable` and does not fall back.
+- Repeat the Docker proof on the actual deployment computer using the reviewed image
+  approved for that machine. The Linux CI runner now proves the container code path,
+  but it does not substitute for host-specific Docker Desktop/Windows verification.
 - Execute the controlled human UAT protocol with representative student, teacher,
   owner, developer, reviewer, and viewer accounts. The protocol is defined; human
   pilot evidence is not yet claimed as complete.
@@ -67,7 +72,8 @@ Updated: August 27, 2026
 ## Verification gate
 
 Run `python -m unittest -v`, `python -m compileall -q .`, `python release_gate.py`,
-`python alpha_doctor.py`, and Protocol White. A release is blocked if any core test
-fails, the worktree is dirty unexpectedly, the release-integrity gate fails,
-container isolation is unavailable for an actual repair, or live/Git integrity
-evidence fails.
+`python alpha_doctor.py`, and Protocol White. When Docker-backed repair readiness is
+claimed, also run `python docker_proof.py` with the reviewed digest-pinned sandbox
+image. A release is blocked if any core test fails, the worktree is dirty
+unexpectedly, the release-integrity gate fails, container isolation is unavailable
+for an actual repair, or live/Git integrity evidence fails.
