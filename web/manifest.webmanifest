@@ -1,0 +1,20 @@
+{
+  "name": "SAD + Forge",
+  "short_name": "SAD Forge",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#08110f",
+  "theme_color": "#101c19",
+  "description": "Private SAD and Forge learning, progress, and governed repair access.",
+  "icons": [
+    {
+      "src": "/ui/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
