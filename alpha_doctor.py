@@ -26,7 +26,7 @@ class Check:
 
 
 def check_python(version_info=None):
-    version = version_info or sys.version_info
+    version = sys.version_info if version_info is None else version_info
     supported = tuple(version[:2]) >= (3, 11)
     detail = f"Python {version[0]}.{version[1]}"
     return Check("python", "core", "pass" if supported else "block", detail)
@@ -40,7 +40,7 @@ def check_release_integrity():
 
 
 def check_local_model(env=None):
-    env = env or os.environ
+    env = os.environ if env is None else env
     model = env.get("SAD_LOCAL_MODEL", "").strip()
     raw_url = env.get("SAD_LOCAL_MODEL_URL", "").strip()
     if not model and not raw_url:
@@ -54,7 +54,7 @@ def check_local_model(env=None):
 
 
 def check_repair_isolation(env=None, which=shutil.which, runner=subprocess.run):
-    env = env or os.environ
+    env = os.environ if env is None else env
     image = env.get("SAD_SANDBOX_IMAGE", "").strip()
     docker = which("docker")
     if not docker:
