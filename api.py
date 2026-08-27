@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import uuid
+import mimetypes
 
 from auth import AuthService
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
@@ -13,6 +14,8 @@ from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from personal_study import StudyAction, StudyRequest, build_study_plan
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
+from study_generator import generate_study_result
+from forge_worker import verify_approved_job
 
 
 API_VERSION = "v1"
@@ -42,6 +45,27 @@ class SadApiService:
 
         token = self.token(headers)
         account = self.auth.require(token)
+        if method == "GET" and path == "/v1/auth/me":
+            return 200, {"account": account, "profile": self.auth.get_profile(token)}
+        if method == "POST" and path == "/v1/auth/logout":
+            self.auth.logout(token)
+            return 200, {"logged_out": True}
+        if method == "POST" and path == "/v1/auth/password":
+            self.auth.change_password(token, body.get("current_password", ""), body.get("new_password", ""))
+            return 200, {"changed": True}
+        if method == "GET" and path == "/v1/accounts":
+            return 200, {"accounts": self.auth.list_accounts(token)}
+        if method == "GET" and path == "/v1/students":
+            students = self.auth.list_students(token)
+            return 200, {"students": [
+                {**student, "progress": self.progress.get(student["account_id"]).to_dict()}
+                for student in students
+            ]}
+        if method == "POST" and path == "/v1/accounts":
+            return 201, self.auth.create_account(body["username"], body["password"], body["role"], token)
+        match = re.fullmatch(r"/v1/accounts/([0-9a-f-]+)/active", path)
+        if method == "POST" and match:
+            return 200, self.auth.set_account_active(match.group(1), body.get("active"), token)
         if method == "POST" and path == "/v1/failures":
             event = FailureEvent(
                 body.get("source", "user"), body["category"], body["summary"],
@@ -65,7 +89,7 @@ class SadApiService:
                 return 200, asdict(self.dashboard.mark_in_review(failure_id, token))
             return 201, asdict(self.dashboard.push_to_development(failure_id, token, body.get("approved") is True))
 
-        match = re.fullmatch(r"/v1/jobs/([0-9a-f-]+)(?:/(approve-isolated|start|result|decision|close))?", path)
+        match = re.fullmatch(r"/v1/jobs/([0-9a-f-]+)(?:/(approve-isolated|start|execute|result|decision|close))?", path)
         if match:
             work_id, action = match.groups()
             if method == "GET" and not action:
@@ -75,6 +99,10 @@ class SadApiService:
                 return 200, asdict(self.dashboard.approve_isolated_work(work_id, token, body.get("source_snapshot", "unknown")))
             if method == "POST" and action == "start":
                 return 200, asdict(self.dashboard.start_forge(work_id, token))
+            if method == "POST" and action == "execute":
+                item = self.dashboard.start_forge(work_id, token)
+                result = verify_approved_job(item)
+                return 200, asdict(self.dashboard.record_forge_result(work_id, result, token))
             if method == "POST" and action == "result":
                 artifacts = tuple(Artifact(**artifact) for artifact in body.get("artifacts", []))
                 result = ForgeResult(
@@ -94,7 +122,12 @@ class SadApiService:
                 body.get("requested_depth", "standard"), body.get("target_word_count"),
                 body.get("preserve_voice", True), body.get("graded", False),
             )
-            return 200, build_study_plan(request).to_dict()
+            plan = build_study_plan(request)
+            payload = plan.to_dict()
+            if body.get("generate") is True:
+                profile = self.auth.get_profile(token)
+                payload["result"] = generate_study_result(request, plan, profile["display_name"])
+            return 200, payload
         if method == "POST" and path == "/v1/forge/quests":
             self.auth.require(token, "forge:play")
             quest = homework_to_quest(body["subject"], body["assignment"], body.get("learning_objective", ""))
@@ -136,6 +169,8 @@ class SadApiHandler(BaseHTTPRequestHandler):
 
     def _handle(self):
         try:
+            if self.command == "GET" and (self.path == "/" or self.path.startswith("/ui/")):
+                return self._serve_ui()
             length = int(self.headers.get("Content-Length", "0"))
             if length < 0 or length > MAX_REQUEST_BYTES:
                 return self._respond(413, {"error": "request_too_large"})
@@ -148,6 +183,23 @@ class SadApiHandler(BaseHTTPRequestHandler):
             self._respond(404, {"error": str(error)})
         except (ValueError, TypeError, json.JSONDecodeError) as error:
             self._respond(400, {"error": str(error)})
+
+    def _serve_ui(self):
+        relative = "index.html" if self.path == "/" else self.path.removeprefix("/ui/")
+        root = Path(__file__).with_name("web").resolve()
+        target = (root / relative).resolve()
+        if target == root or not target.is_relative_to(root) or not target.is_file():
+            return self._respond(404, {"error": "UI asset not found."})
+        content = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        self.wfile.write(content)
 
     do_GET = _handle
     do_POST = _handle

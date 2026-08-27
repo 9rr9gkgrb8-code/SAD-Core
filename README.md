@@ -93,6 +93,15 @@ local copy. Do not commit the `local_data` folder.
 python app.py
 ```
 
+For the Alpha 1 browser product, including first-time owner setup, run:
+
+```powershell
+python alpha.py
+```
+
+Then open `http://127.0.0.1:8765/`. See `ALPHA1.md` for role surfaces,
+private-data backups, model configuration, and the local-only release boundary.
+
 Run the loopback-only JSON API after local owner setup:
 
 ```powershell

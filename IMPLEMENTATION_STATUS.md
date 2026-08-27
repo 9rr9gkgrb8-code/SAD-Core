@@ -28,6 +28,14 @@ Updated: August 27, 2026
 - Local per-user authentication uses salted PBKDF2 hashes, expiring sessions,
   lockout, owner-controlled privileged account creation and no shared credential.
 - GitHub CI compiles the project and runs the full test/contract/security suite.
+- Alpha 1 browser UI provides separate role-filtered Personal Study, Forge Student,
+  teacher roster, Owner/Dev dashboard, account control, and security surfaces.
+- Personal Study can generate full output through the explicitly configured
+  loopback-only local model and reports honestly when the model is unavailable.
+- The host-controlled Forge worker turns approved jobs into isolated test evidence
+  without receiving approval, export, merge, credential, or Git authority.
+- Account lifecycle now includes owner listing/disable controls, self-service
+  password changes, logout, and revocation of other sessions after password change.
 
 ## Remaining operational work
 
@@ -35,12 +43,11 @@ Updated: August 27, 2026
   `SAD_SANDBOX_IMAGE` to its exact `name@sha256:<digest>`. This environment has no
   Docker/Podman, so real container execution cannot be demonstrated here; the
   production path records `isolation_unavailable` and does not fall back.
-- Build a graphical dashboard if desired. The complete dashboard workflow is
-  currently exposed as stable JSON endpoints, not a browser UI.
-- Connect Personal Study plans to the configured local-model generation adapter for
-  generated explanations/edits. The current module produces authoritative request
-  plans and boundaries; it does not fabricate subject answers without a model.
+- Conduct controlled user acceptance and accessibility testing with representative
+  student, teacher, owner, developer, reviewer, and viewer accounts.
 - Sessions are intentionally memory-only and require login again after API restart.
+- Internet hosting remains deliberately unsupported for Alpha 1: TLS, hosted
+  secrets, email recovery, and external identity are future-beta work.
 - Run and inspect the first GitHub Actions CI result after this commit is pushed.
 
 ## Verification gate

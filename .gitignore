@@ -5,6 +5,8 @@ failures.json
 settings.json
 local_data/
 .env
+.env.*
+!.env.example
 accounts.json
 dashboard_state.json
 student_progress.json

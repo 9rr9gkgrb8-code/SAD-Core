@@ -48,6 +48,7 @@ ROLE_PERMISSIONS = {
         "study:personal", "forge:play", "progress:own", "progress:students",
         "account:create_student", "account:create_teacher", "account:create_developer",
         "account:create_reviewer", "account:create_viewer",
+        "account:list", "account:manage",
         "development:view", "development:review", "development:work",
         "development:work_assigned", "development:decide", "development:govern",
     },
@@ -200,6 +201,55 @@ class AuthService:
 
     def logout(self, token):
         return self.sessions.pop(token, None) is not None
+
+    def list_accounts(self, token):
+        """Return public account records to an authorized local administrator."""
+        self.require(token, "account:list")
+        return [self.public_account(account) for account in self._load()["accounts"]]
+
+    def list_students(self, token):
+        self.require(token, "progress:students")
+        return [
+            self.public_account(account) for account in self._load()["accounts"]
+            if account["role"] == Role.STUDENT.value and account.get("active")
+        ]
+
+    def set_account_active(self, account_id, active, token):
+        """Enable or disable a non-owner account and revoke its live sessions."""
+        actor = self.require(token, "account:manage")
+        if not isinstance(active, bool):
+            raise ValueError("Active must be true or false.")
+        with self.lock:
+            data = self._load()
+            account = next((item for item in data["accounts"] if item["account_id"] == account_id), None)
+            if not account:
+                raise KeyError("Account not found.")
+            if account["role"] == Role.OWNER.value or account["account_id"] == actor["account_id"]:
+                raise PermissionError("Owner accounts cannot be disabled through this endpoint.")
+            account["active"] = active
+            self._save(data)
+            if not active:
+                self.sessions = {
+                    key: value for key, value in self.sessions.items()
+                    if value["account_id"] != account_id
+                }
+            return self.public_account(account)
+
+    def change_password(self, token, current_password, new_password):
+        """Change the signed-in account password and revoke every other session."""
+        actor = self.require(token)
+        _validate_password(new_password)
+        with self.lock:
+            data = self._load()
+            account = next(item for item in data["accounts"] if item["account_id"] == actor["account_id"])
+            _, candidate = _password_hash(current_password, account["password_salt"])
+            if not hmac.compare_digest(candidate, account["password_hash"]):
+                raise PermissionError("Current password is incorrect.")
+            salt, digest = _password_hash(new_password)
+            account["password_salt"], account["password_hash"] = salt, digest
+            self._save(data)
+            self.sessions = {token: self.sessions[token]}
+            return True
 
     def get_profile(self, token):
         account = self.require(token)
