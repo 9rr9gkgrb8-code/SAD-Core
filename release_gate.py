@@ -69,13 +69,21 @@ TEXT_SUFFIXES = {
     ".js", ".html", ".css", ".svg", ".webmanifest",
 }
 EXCLUDED_PARTS = {".git", ".sad_sandbox", "local_data", "__pycache__"}
+EXCLUDED_NAMES = {
+    "accounts.json",
+    "chat_history.json",
+    "dashboard_state.json",
+    "failures.json",
+    "settings.json",
+    "student_progress.json",
+}
 
 
 def iter_release_text_files(root: Path = ROOT):
     for path in root.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
-        if any(part in EXCLUDED_PARTS for part in path.parts):
+        if path.name in EXCLUDED_NAMES or any(part in EXCLUDED_PARTS for part in path.parts):
             continue
         yield path
 
