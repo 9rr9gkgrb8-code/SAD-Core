@@ -1,6 +1,4 @@
-import subprocess
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from alpha_doctor import (
@@ -11,6 +9,33 @@ from alpha_doctor import (
     core_ready,
     repair_ready,
 )
+from container_sandbox import SandboxUnavailable
+
+
+class ReadyRunner:
+    def __init__(self, image=None):
+        self.image = image
+
+    def preflight(self, workspace):
+        return workspace
+
+
+class MissingDockerRunner:
+    def __init__(self, image=None):
+        self.image = image
+
+    def preflight(self, workspace):
+        raise SandboxUnavailable("Docker is required; unsafe local execution is disabled.")
+
+
+class InvalidImageRunner:
+    def __init__(self, image=None):
+        self.image = image
+
+    def preflight(self, workspace):
+        raise SandboxUnavailable(
+            "SAD_SANDBOX_IMAGE must be pinned as name@sha256:<64 lowercase hex characters>."
+        )
 
 
 class AlphaDoctorTests(unittest.TestCase):
@@ -39,40 +64,26 @@ class AlphaDoctorTests(unittest.TestCase):
         self.assertEqual(check.status, "pass")
 
     def test_repair_isolation_warns_without_docker(self):
-        check = check_repair_isolation({}, which=lambda _: None)
+        check = check_repair_isolation({}, runner_factory=MissingDockerRunner)
         self.assertEqual(check.scope, "repair")
         self.assertEqual(check.status, "warn")
+        self.assertIn("Docker is required", check.detail)
 
-    def test_repair_isolation_requires_digest_pinned_image(self):
+    def test_repair_isolation_surfaces_digest_requirement(self):
         check = check_repair_isolation(
             {"SAD_SANDBOX_IMAGE": "python:3.11"},
-            which=lambda _: "/usr/bin/docker",
+            runner_factory=InvalidImageRunner,
         )
         self.assertEqual(check.status, "warn")
         self.assertIn("sha256", check.detail)
 
-    def test_repair_isolation_passes_with_preloaded_digest(self):
+    def test_repair_isolation_passes_when_sandbox_boundary_is_ready(self):
         image = "sad-sandbox@sha256:" + ("a" * 64)
-        runner = lambda *args, **kwargs: SimpleNamespace(returncode=0)
         check = check_repair_isolation(
             {"SAD_SANDBOX_IMAGE": image},
-            which=lambda _: "/usr/bin/docker",
-            runner=runner,
+            runner_factory=ReadyRunner,
         )
         self.assertEqual(check.status, "pass")
-
-    def test_repair_isolation_handles_docker_failure(self):
-        image = "sad-sandbox@sha256:" + ("a" * 64)
-
-        def runner(*args, **kwargs):
-            raise subprocess.TimeoutExpired("docker", 10)
-
-        check = check_repair_isolation(
-            {"SAD_SANDBOX_IMAGE": image},
-            which=lambda _: "/usr/bin/docker",
-            runner=runner,
-        )
-        self.assertEqual(check.status, "warn")
 
     def test_release_integrity_blocks_on_gate_problem(self):
         with patch("alpha_doctor.run_release_gate", return_value=["problem"]):
@@ -82,7 +93,7 @@ class AlphaDoctorTests(unittest.TestCase):
         checks = [
             check_python((3, 11)),
             check_local_model({}),
-            check_repair_isolation({}, which=lambda _: None),
+            check_repair_isolation({}, runner_factory=MissingDockerRunner),
         ]
         self.assertTrue(core_ready(checks))
         self.assertFalse(repair_ready(checks))
