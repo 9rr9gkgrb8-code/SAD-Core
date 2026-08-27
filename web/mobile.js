@@ -78,5 +78,15 @@
     addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
   }
 
+  function loadChatSurface(){
+    if(!document.querySelector('link[href="/ui/chat.css"]')){
+      const style=document.createElement("link");style.rel="stylesheet";style.href="/ui/chat.css";document.head.appendChild(style);
+    }
+    if(!document.querySelector('script[src="/ui/chat.js"]')){
+      const script=document.createElement("script");script.src="/ui/chat.js";script.async=false;document.head.appendChild(script);
+    }
+  }
+  loadChatSurface();
+
   window.SADMobile={remote,headers,ensurePaired,handleApiError,forgetDevice};
 })();

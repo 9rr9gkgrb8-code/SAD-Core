@@ -10,3 +10,4 @@ local_data/
 accounts.json
 dashboard_state.json
 student_progress.json
+chat_history.json

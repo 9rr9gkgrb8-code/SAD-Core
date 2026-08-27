@@ -5,6 +5,7 @@ SAD Mobile is an optional paired phone surface for the local-first Alpha. It doe
 ## What is implemented
 
 - Responsive phone-first SAD + Forge browser UI
+- Free-form **SAD Chat** with durable per-account conversation history and follow-up context
 - Installable Progressive Web App metadata and service worker
 - iPhone/iPad standalone/home-screen support through Safari
 - Android install prompt support where the browser exposes it
@@ -19,7 +20,23 @@ SAD Mobile is an optional paired phone surface for the local-first Alpha. It doe
 - Explicit private/overlay IPv4 binding only; wildcard and public IP bindings are refused
 - Mobile preflight doctor
 - Combined desktop + mobile launcher
-- Service worker caches only static shell files; API, pairing, student, account, and repair traffic is never cached
+- Service worker caches only static shell files; API, pairing, chat, student, account, and repair traffic is never cached
+
+## SAD Chat on a phone
+
+SAD Chat is the normal conversation lane. It is separate from Forge's game/tutoring lane.
+
+A signed-in person can:
+
+- start a new conversation
+- continue an earlier conversation after reconnecting or restarting SAD
+- ask follow-up questions using recent conversational context
+- archive an old conversation without deleting it from the private local history file
+- see whether a reply came from the configured **Local AI** or the lighter **Built-in dialogue** fallback
+
+When the local model is configured and running, the phone is simply the secure client: the host PC generates the AI response and sends it back through the paired TLS gateway. If the local model is unavailable, the UI says so and SAD falls back to its built-in dialogue layer rather than pretending a full model answered.
+
+Conversation text does not grant repair, tool, approval, or Git authority.
 
 ## Authority model
 
@@ -30,13 +47,14 @@ Pairing trusts a **device**. Signing in authorizes a **person**. Both gates are 
 Use this for student/family phones by default. The gateway permits only:
 
 - sign in / sign out / own password change
+- SAD Chat for the signed-in account
 - Personal Study
 - Forge quests
 - Forge hints
 - Forge completion
 - own Forge progress
 
-It blocks dashboard, account administration, teacher roster, repair, and mobile-device administration routes before normal SAD role authorization is reached.
+It blocks dashboard, account administration, teacher roster, repair, and mobile-device administration routes before normal SAD role authorization is reached. Chat routes are allow-listed explicitly, so the chat prefix cannot become a tunnel to future privileged endpoints.
 
 ### Full role mode
 
@@ -107,7 +125,8 @@ The desktop/core endpoint remains loopback-only.
 6. On the phone, open the HTTPS mobile address.
 7. Enter the 8-digit code and phone name.
 8. After pairing succeeds, sign in using the person's normal SAD account.
-9. The Owner can revoke the phone at any time from **Mobile Access**.
+9. **SAD Chat** opens as the primary conversation view.
+10. The Owner can revoke the phone at any time from **Mobile Access**.
 
 Revoking a device invalidates its device credential even if the browser still has the cookie.
 
@@ -120,7 +139,7 @@ After the HTTPS page is trusted and paired:
 3. Choose **Add to Home Screen**.
 4. Launch **SAD Forge** from the new home-screen icon.
 
-Account sessions remain intentionally memory-based. A person may need to sign in again after a SAD server restart even though the phone itself remains paired.
+Account sessions remain intentionally memory-based. A person may need to sign in again after a SAD server restart even though the phone itself remains paired. Saved SAD conversations remain on the host and can be reopened after signing back in.
 
 ## Install on Android
 
@@ -128,14 +147,14 @@ After opening the trusted HTTPS page, supported Chromium-based browsers can surf
 
 ## Offline behavior
 
-The app shell may open while offline, but private functions require a live connection to the host. SAD does not cache API responses, study output, account data, repair evidence, student records, bearer sessions, or mobile device credentials in the service worker.
+The app shell may open while offline, but private functions require a live connection to the host. SAD does not cache API responses, chat requests/replies, study output, account data, repair evidence, student records, bearer sessions, or mobile device credentials in the service worker.
 
 ## Mobile security checks
 
 The automated suite verifies:
 
 - public/wildcard binding refusal
-- learning-mode route isolation
+- learning-mode route isolation, including explicit personal-chat route matching
 - full-role mode continuing to rely on SAD RBAC
 - pairing attempt rate limiting
 - TLS material required before startup
@@ -143,8 +162,9 @@ The automated suite verifies:
 - single-use/expiring pairing codes
 - hashed-at-rest pairing/device secrets
 - device revocation
-- API/pairing exclusion from service-worker caching
-- phone pairing UI and touch/safe-area rules
+- API/pairing/chat exclusion from service-worker caching
+- per-account conversation ownership
+- phone chat UI and touch/safe-area rules
 
 ## Current mobile designation
 

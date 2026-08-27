@@ -5,10 +5,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import re
-import uuid
 import mimetypes
 
 from auth import AuthService
+from conversation import ConversationStore, generate_chat_reply
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from mobile_access import MobileAccessStore
@@ -24,11 +24,12 @@ MAX_REQUEST_BYTES = 2_000_000
 
 
 class SadApiService:
-    def __init__(self, auth=None, dashboard=None, progress=None, mobile_access=None):
+    def __init__(self, auth=None, dashboard=None, progress=None, mobile_access=None, conversations=None):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
         self.progress = progress or ProgressStore(Path(__file__).with_name("student_progress.json"))
         self.mobile_access = mobile_access or MobileAccessStore()
+        self.conversations = conversations or ConversationStore()
 
     def token(self, headers):
         value = headers.get("Authorization", "")
@@ -47,6 +48,7 @@ class SadApiService:
 
         token = self.token(headers)
         account = self.auth.require(token)
+        account_id = account["account_id"]
         if method == "GET" and path == "/v1/auth/me":
             return 200, {"account": account, "profile": self.auth.get_profile(token)}
         if method == "POST" and path == "/v1/auth/logout":
@@ -55,6 +57,25 @@ class SadApiService:
         if method == "POST" and path == "/v1/auth/password":
             self.auth.change_password(token, body.get("current_password", ""), body.get("new_password", ""))
             return 200, {"changed": True}
+
+        if method == "GET" and path == "/v1/chat/sessions":
+            return 200, {"sessions": self.conversations.list_sessions(account_id)}
+        if method == "POST" and path == "/v1/chat/sessions":
+            return 201, self.conversations.create_session(account_id)
+        match = re.fullmatch(r"/v1/chat/sessions/([0-9a-f-]+)", path)
+        if method == "GET" and match:
+            return 200, self.conversations.get_session(account_id, match.group(1))
+        match = re.fullmatch(r"/v1/chat/sessions/([0-9a-f-]+)/(messages|archive)", path)
+        if method == "POST" and match:
+            session_id, action = match.groups()
+            if action == "archive":
+                return 200, self.conversations.archive_session(account_id, session_id)
+            session = self.conversations.raw_session(account_id, session_id)
+            profile = self.auth.get_profile(token)
+            reply, engine = generate_chat_reply(body.get("message", ""), profile, session)
+            updated = self.conversations.append_turn(account_id, session_id, body.get("message", ""), reply, engine)
+            return 200, {"reply": reply, "engine": engine, "session": updated}
+
         if method == "GET" and path == "/v1/accounts":
             return 200, {"accounts": self.auth.list_accounts(token)}
         if method == "GET" and path == "/v1/students":
@@ -83,7 +104,7 @@ class SadApiService:
         if method == "POST" and path == "/v1/failures":
             event = FailureEvent(
                 body.get("source", "user"), body["category"], body["summary"],
-                body.get("evidence") or [{"reported_by": account["account_id"]}],
+                body.get("evidence") or [{"reported_by": account_id}],
                 body.get("suggested_correction", "Review the evidence."), body.get("affected_files", []),
             )
             return 201, asdict(self.dashboard.ingest(event))
@@ -148,21 +169,21 @@ class SadApiService:
             return 201, asdict(quest)
         if method == "GET" and path == "/v1/forge/progress":
             self.auth.require(token, "progress:own")
-            return 200, self.progress.get(account["account_id"]).to_dict()
+            return 200, self.progress.get(account_id).to_dict()
         match = re.fullmatch(r"/v1/forge/progress/([0-9a-f-]+)", path)
         if method == "GET" and match:
             self.auth.require(token, "progress:students")
             return 200, self.progress.get(match.group(1)).to_dict()
         if method == "POST" and path == "/v1/forge/hint":
             self.auth.require(token, "forge:play")
-            progress = self.progress.get(account["account_id"])
+            progress = self.progress.get(account_id)
             hint = next_hint(progress, body["quest_id"])
             self.progress.save(progress)
             return 200, {"hint_level": hint, "progress": progress.to_dict()}
         if method == "POST" and path == "/v1/forge/complete":
             self.auth.require(token, "forge:play")
             quest = Quest(**body["quest"])
-            progress = self.progress.get(account["account_id"])
+            progress = self.progress.get(account_id)
             outcome = complete_quest(progress, quest, body["score"], body["boss_passed"])
             self.progress.save(progress)
             return 200, {"outcome": outcome, "progress": progress.to_dict()}

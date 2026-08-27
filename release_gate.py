@@ -17,6 +17,7 @@ REQUIRED_PATHS = (
     "api.py",
     "auth.py",
     "container_sandbox.py",
+    "conversation.py",
     "docker_proof.py",
     "failure_dashboard.py",
     "forge_worker.py",
@@ -30,6 +31,9 @@ REQUIRED_PATHS = (
     "start_mobile.ps1",
     "test_alpha_doctor.py",
     "test_alpha_product.py",
+    "test_chat_api.py",
+    "test_chat_ui.py",
+    "test_conversation.py",
     "test_forge_game_ui.py",
     "test_live_repair.py",
     "test_mobile_access.py",
@@ -38,6 +42,8 @@ REQUIRED_PATHS = (
     "test_owner_repair_ui.py",
     "test_web_accessibility.py",
     "web/app.js",
+    "web/chat.css",
+    "web/chat.js",
     "web/icon.svg",
     "web/index.html",
     "web/manifest.webmanifest",
@@ -63,13 +69,21 @@ TEXT_SUFFIXES = {
     ".js", ".html", ".css", ".svg", ".webmanifest",
 }
 EXCLUDED_PARTS = {".git", ".sad_sandbox", "local_data", "__pycache__"}
+EXCLUDED_NAMES = {
+    "accounts.json",
+    "chat_history.json",
+    "dashboard_state.json",
+    "failures.json",
+    "settings.json",
+    "student_progress.json",
+}
 
 
 def iter_release_text_files(root: Path = ROOT):
     for path in root.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
-        if any(part in EXCLUDED_PARTS for part in path.parts):
+        if path.name in EXCLUDED_NAMES or any(part in EXCLUDED_PARTS for part in path.parts):
             continue
         yield path
 

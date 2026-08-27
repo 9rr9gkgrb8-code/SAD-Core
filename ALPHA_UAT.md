@@ -45,9 +45,26 @@ for every accepted Medium finding.
 - Confirm every authority-changing action requires the expected human role and explicit action.
 - Change the owner password and confirm other sessions are revoked.
 
+## SAD Chat acceptance
+
+Run these scenarios with at least Owner and Student accounts.
+
+- Sign in and confirm **SAD Chat** is available as the normal free-form conversation lane.
+- Start a new conversation, send at least three related turns, and verify follow-up context is sensible.
+- With the configured local model running, confirm the assistant reports **Local AI** for the reply engine.
+- Stop or disable the local model and confirm SAD reports **Built-in dialogue** rather than pretending a model response occurred.
+- Start a second conversation and confirm its context does not leak into the first conversation.
+- Restart SAD, sign back in, and confirm active conversations and their messages are still available.
+- Archive a conversation and confirm it disappears from the active list without deleting unrelated conversations.
+- Sign in as a different account and attempt to fetch the first account's known conversation ID; require denial/not-found.
+- Confirm ordinary conversation text such as “fix it,” “approve it,” or “merge it” does not invoke repair, approval, file, or Git actions.
+- Confirm `chat_history.json` is local-only, excluded from Git, and not available from the service-worker cache.
+- Confirm a full conversation can be operated using keyboard only and that the message log/status updates are announced sensibly by a screen reader.
+
 ## Student acceptance
 
 - Sign in with a student credential and confirm owner/development controls are absent.
+- Use SAD Chat for a normal multi-turn conversation and confirm the Student cannot gain admin/repair authority through chat.
 - Use Personal Study for explanation, method teaching, walkthrough, work checking,
   hints, proofreading, essay editing, rubric review, an example, and word-count expansion.
 - Confirm graded-work handling follows the selected request rather than forcing a quiz loop.
@@ -109,9 +126,12 @@ Run this section on every phone/browser combination that will be claimed as supp
 ### Learning-mode phone
 
 - Pair the phone in `learning` mode and sign in as Student.
+- Open SAD Chat, continue a multi-turn conversation, start a second chat, switch between them, and archive one.
+- Confirm the phone shows **Local AI** when the host model is available and **Built-in dialogue** when it is not.
 - Complete Personal Study and Forge quest/hint/mastery/progress workflows.
 - Attempt dashboard, account, teacher-roster, mobile-admin, failure, and repair routes;
   require denial at the gateway even if a higher-authority account token is supplied.
+- Attempt invented chat subroutes such as `/repair` and require denial, proving the gateway allow-list is exact rather than prefix-wide.
 
 ### Full-role phone
 
@@ -125,11 +145,12 @@ Run this section on every phone/browser combination that will be claimed as supp
 
 - On iPhone/iPad Safari, add SAD Forge to the home screen and launch it standalone.
 - On Android, use the browser install/add-to-home-screen flow and launch standalone.
+- Confirm SAD Chat opens cleanly in standalone mode and the composer is not hidden by the keyboard/home indicator.
 - Confirm safe-area padding prevents controls from hiding under notches/home indicators.
 - Confirm all primary touch controls have comfortable tap targets and forms do not trigger unwanted zoom.
 - Toggle phone connectivity and confirm the UI reports offline status.
 - Confirm an offline shell may open but private/API functionality fails safely until the host is reachable.
-- Confirm no prior study output, account data, student record, repair evidence, session token,
+- Confirm no prior chat text, study output, account data, student record, repair evidence, session token,
   pairing code, or device credential is available from the service-worker cache.
 
 ## Security acceptance
@@ -141,6 +162,7 @@ Run this section on every phone/browser combination that will be claimed as supp
 - Verify repeated incorrect passwords trigger temporary lockout.
 - Verify logout invalidates the active account session.
 - Verify password change revokes other account sessions.
+- Attempt cross-account chat access by known session ID and require refusal/not-found.
 - Attempt repair execution without ready isolation and require a fail-closed result with no same-user fallback.
 - Confirm repair containers, when enabled, have no network and use the exact reviewed digest-pinned image.
 - Confirm release-integrity checks reject retired private-mode implementation residue in the current release tree.
@@ -152,6 +174,7 @@ Perform the following on login and every role-visible view:
 - Complete the primary workflow using keyboard only. Focus must always be visible and navigation order must remain logical.
 - Confirm view changes move focus to the new view heading and expose the selected navigation item as current.
 - With a screen reader, confirm login errors are announced immediately and normal status updates/generated outputs are announced without stealing control.
+- In SAD Chat, confirm the conversation log, New conversation, Archive, history list, composer label, and Send control are understandable.
 - Confirm every input, select, and textarea has an understandable accessible label.
 - Confirm data tables announce a meaningful caption and column headers.
 - Test at 200% browser zoom and at a narrow mobile-sized viewport without losing a required control or forcing two-dimensional scrolling for ordinary forms.
@@ -179,6 +202,7 @@ A candidate may be called **Alpha-ready for a controlled local pilot** when:
 
 - CI, full tests, release integrity, and operator preflight are green;
 - every required desktop role boundary above passes;
+- SAD Chat account isolation and authority-boundary scenarios pass;
 - the accessibility acceptance pass has no blocking finding;
 - no Critical or High UAT finding remains open; and
 - any repair workflow being claimed as ready has been demonstrated with the real reviewed Docker image on the target machine.

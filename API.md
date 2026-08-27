@@ -15,6 +15,11 @@ the normal SAD API remains on loopback.
 - `GET /v1/auth/me`
 - `POST /v1/auth/logout`
 - `POST /v1/auth/password`
+- `GET /v1/chat/sessions` — list the signed-in account's active conversations
+- `POST /v1/chat/sessions` — start a new conversation
+- `GET /v1/chat/sessions/{session_id}` — load one owned conversation
+- `POST /v1/chat/sessions/{session_id}/messages` — send one message and persist the SAD reply
+- `POST /v1/chat/sessions/{session_id}/archive` — archive an owned conversation
 - `GET /v1/accounts` (owner)
 - `POST /v1/accounts` (role-permitted account creation)
 - `POST /v1/accounts/{account_id}/active` (owner)
@@ -37,6 +42,23 @@ the normal SAD API remains on loopback.
 - `POST /v1/jobs/{work_item_id}/decision`
 - `POST /v1/jobs/{work_item_id}/close`
 
+## SAD Chat semantics
+
+SAD Chat is the general free-form conversation surface. It is distinct from Personal
+Study, Forge quests, and the governed repair workflow.
+
+- Chat sessions belong to exactly one account and cannot be read by another account.
+- Active history is persisted in local `chat_history.json`, which is excluded from Git
+  and written with owner-only file permissions where the operating system supports it.
+- Only recent turns are supplied to the local model for conversational context; the
+  full saved transcript is not blindly inserted into every prompt.
+- When the configured loopback local model is available, chat replies use that model
+  and report `engine: local_model`.
+- If the local model is unavailable, SAD falls back to its built-in dialogue layer and
+  reports `engine: built_in` rather than pretending a model-generated answer occurred.
+- Conversation text does not grant tool, repair, approval, or Git authority. Those
+  actions remain behind their existing explicit governed endpoints.
+
 ## Mobile gateway endpoints
 
 These exist only on the paired TLS mobile gateway:
@@ -50,13 +72,13 @@ creates a user session and never substitutes for SAD role authorization.
 
 ### Mobile device modes
 
-- `learning`: only account-self, Personal Study, Forge play, and own-progress routes
-  are admitted by the gateway.
+- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix.
 - `full_role`: the gateway admits the normal API surface, then SAD's existing RBAC
   decides what the signed-in role may actually do.
 
 The device credential is hashed at rest and is never available to browser JavaScript.
-The service worker excludes `/v1/*` and `/mobile/*` traffic from caching.
+The service worker excludes `/v1/*` and `/mobile/*` traffic, including conversation
+requests and replies, from caching.
 
 ### Repair decision semantics
 
