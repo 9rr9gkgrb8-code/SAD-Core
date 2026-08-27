@@ -22,14 +22,14 @@ Updated: August 27, 2026
   permissions. Student and teacher roles remain separate from admin controls.
 - Failure and job state survives restart, deduplicates repeated failures, preserves
   ordered evidence and prevents duplicate work items under concurrent pushes.
-- Owner Repair Inbox now provides the normal failure → generate/test → review exact
+- Owner Repair Inbox provides the normal failure → generate/test → review exact
   diff → YES/NO path while preserving the advanced workflow underneath.
-- Forge repair execution now creates a real single-file draft through the configured
+- Forge repair execution creates a real single-file draft through the configured
   loopback local model. Planner output must be JSON-only, match one exact source
   location, stay within an approved root target, and make an actual change.
 - Forge tests the changed sandbox copy and returns the exact diff, test evidence, and
   correlated proposal receipt. A failed result cannot use the simple Owner YES path.
-- Owner YES now marks the passing proposal human-approved and applies only that exact
+- Owner YES marks the passing proposal human-approved and applies only that exact
   tested file to the local live project after a stale-source hash check. Application
   is atomic, verifies the resulting hash, retains the original under the proposal,
   and automatically restores it if the write or dashboard persistence fails.
@@ -49,11 +49,34 @@ Updated: August 27, 2026
   regression-tested against the backend progression contract.
 - Local per-user authentication uses salted PBKDF2 hashes, expiring sessions,
   lockout, owner-controlled privileged account creation and no shared credential.
+- Mobile Preview now includes a phone-first installable PWA shell, safe-area/touch
+  layout, install hooks, online/offline status, and static-shell-only service-worker
+  caching. API and pairing traffic is explicitly excluded from the cache.
+- Mobile device trust uses Owner-generated one-time 8-digit codes, five-minute expiry,
+  single-use consumption, pairing-attempt throttling, 30-day device expiry, and
+  Owner revocation. Pairing codes/device tokens are hashed at rest.
+- Paired-device secrets are delivered to phones only through Secure, HttpOnly,
+  SameSite=Strict cookies, so browser JavaScript and the service worker cannot read
+  the credential.
+- The mobile gateway is a separate TLS 1.2+ network surface; the normal SAD API stays
+  loopback-only. The gateway rejects wildcard, loopback, hostname, and public IPv4
+  bindings and accepts one explicit private/approved overlay IPv4 address.
+- Mobile `learning` mode admits only account-self, Personal Study, Forge play and own
+  progress routes. `full_role` mode still defers to the existing signed-in SAD RBAC.
+- Owner Mobile Access UI can create temporary pairing codes, list paired phones, and
+  revoke device access. Phones still require a normal SAD account login after pairing.
+- Mobile preflight (`mobile_doctor.py`), combined desktop/mobile launcher (`mobile.py`),
+  and Windows wrapper (`start_mobile.ps1`) are included. Provider/certificate-specific
+  host setup remains an operational step, not an implicit trust change by SAD.
+- Mobile regression tests cover pairing secrecy/expiry/revocation, owner authority,
+  route isolation, bind-address refusal, rate limiting, PWA install contract, API
+  cache exclusion, and phone touch/safe-area requirements.
 - GitHub CI compiles the project, syntax-checks browser JavaScript, and runs the full
   test/contract/security suite.
 - The Alpha release gate is tested and enforced by CI; it verifies required release
   surfaces and blocks retired private-mode implementation markers from returning to
-  the current release tree, including Python, docs, browser JavaScript, HTML, and CSS.
+  the current release tree, including Python, docs, browser JavaScript, HTML, CSS,
+  mobile scripts, manifest, and icon assets.
 - Alpha operator preflight reports core readiness separately from optional local-model
   configuration and Docker-backed repair-isolation readiness.
 - GitHub Actions performs a real Docker isolation proof after the core gate. The
@@ -63,7 +86,8 @@ Updated: August 27, 2026
   non-root execution, a read-only workspace, writable tmpfs, stripped GitHub
   credentials, and unavailable external networking.
 - Alpha 1 browser UI provides separate role-filtered Personal Study, Forge Student,
-  teacher roster, Owner/Dev dashboard, account control, and security surfaces.
+  teacher roster, Owner/Dev dashboard, account control, mobile control, and security
+  surfaces.
 - Browser accessibility structure has automated regression checks for form labels,
   keyboard order, visible focus, live announcements, navigation semantics, and
   data-table captions/column scopes.
@@ -87,15 +111,27 @@ Updated: August 27, 2026
   pilot evidence is not yet claimed as complete.
 - Perform the manual keyboard, screen-reader, 200% zoom, and narrow-viewport checks
   in `ALPHA_UAT.md`; automated structural accessibility checks do not replace them.
+- For Mobile Preview, provision a phone-trusted TLS certificate/key on the Windows
+  deployment host, choose the explicit private bind address, and require
+  `python mobile_doctor.py` → `MOBILE GATEWAY: READY`.
+- Run mobile host/phone UAT: pairing, repeated invalid-code throttling, revocation,
+  learning-mode denial of admin/development routes, full-role RBAC, iPhone/Android
+  install/home-screen behavior, reconnect behavior, and narrow-screen usability.
 - Sessions are intentionally memory-only and require login again after API restart.
-- Internet hosting remains deliberately unsupported for Alpha 1: TLS, hosted
-  secrets, email recovery, and external identity are future-beta work.
+- Public internet hosting remains deliberately unsupported for Alpha 1. The mobile
+  preview must not be router-port-forwarded; public TLS termination, hosted secrets,
+  email recovery, and external identity remain future work.
 
 ## Verification gate
 
 Run `python -m unittest -v`, `python -m compileall -q .`, `python release_gate.py`,
 `python alpha_doctor.py`, and Protocol White. When Docker-backed repair readiness is
 claimed, also run `python docker_proof.py` with the reviewed digest-pinned sandbox
-image. A release is blocked if any core test fails, the worktree is dirty
-unexpectedly, the release-integrity gate fails, container isolation is unavailable
-for an actual repair, or live/Git integrity evidence fails.
+image. When Mobile Preview readiness is claimed, also run `python mobile_doctor.py`
+with the deployment host's actual private address and trusted TLS material, then
+complete the phone-specific UAT in `MOBILE.md`.
+
+A release is blocked if any core test fails, the worktree is dirty unexpectedly, the
+release-integrity gate fails, container isolation is unavailable for an actual repair,
+or live/Git integrity evidence fails. Mobile Preview must remain disabled when its own
+preflight is blocked; that does not weaken or expose the base loopback Alpha surface.

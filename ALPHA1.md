@@ -13,12 +13,20 @@ repair-isolation readiness.
   Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. It does
   not silently fall back to same-user execution.
 
+The optional paired mobile preview has its own `python mobile_doctor.py` preflight
+and is not considered ready until it reports `MOBILE GATEWAY: READY` on the actual
+host configuration.
+
 Use `.env.example` as the configuration reference. Never commit a real `.env` file.
 
 ## Start
 
-Run `python alpha.py`, complete the one-time owner setup, then open the displayed
-`http://127.0.0.1:8765/` address. The application accepts local connections only.
+For desktop-only Alpha, run `python alpha.py`, complete the one-time owner setup, then
+open `http://127.0.0.1:8765/`. The core API remains loopback-only.
+
+For the optional paired mobile preview, configure the private bind address and trusted
+TLS certificate/key described in `MOBILE.md`, then run `python mobile.py`. This starts
+the same loopback desktop service plus a separate paired TLS phone gateway.
 
 The owner can create student, teacher, developer, reviewer, and viewer accounts.
 Each person receives a separate credential. Students never see developer controls.
@@ -40,6 +48,9 @@ Each person receives a separate credential. Students never see developer control
   and a preserved proposal-local backup
 - Shared role-filtered Failure Inbox and Forge job dashboard with advanced review,
   push, isolation approval, execution, decision, and close controls
+- Optional Mobile Preview with installable PWA shell, one-time Owner pairing,
+  revocable paired-device trust, learning-only/full-role modes, and TLS-only private
+  gateway while the core API stays on loopback
 - Password change and session revocation
 
 ## Repair authority boundary
@@ -60,6 +71,20 @@ workflow.
 Reviewer approval remains evidence/governance approval only and does not apply a live
 file. Developer and Forge roles still cannot approve or apply their own work.
 
+## Mobile authority boundary
+
+Pairing a phone does not create a user session. The phone must first prove a valid
+paired-device credential and then the person must sign in through the normal SAD
+authentication system.
+
+`learning` mode allows only account-self, Personal Study, Forge play, and own progress.
+`full_role` mode allows the normal route surface, but the signed-in account still has
+exactly its existing SAD permissions. Device credentials are revocable and kept from
+browser JavaScript in a Secure/HttpOnly/SameSite=Strict cookie.
+
+The mobile service worker never caches API, pairing, student, account, repair, session,
+or device-credential traffic.
+
 ## Acceptance
 
 Before widening a local pilot, run the scenarios in `ALPHA_UAT.md`. They cover every
@@ -68,6 +93,10 @@ conditions, and the evidence required before calling a candidate Alpha-ready.
 
 Automated accessibility checks run with the normal unit suite, but they are a
 regression net rather than a substitute for the manual accessibility pass.
+
+Mobile Preview also requires host/phone validation of TLS trust, pairing, revocation,
+learning-mode route isolation, full-role RBAC, install/home-screen behavior, and
+narrow-screen use before it should be treated as operational on that device.
 
 ## Private data and backups
 
@@ -89,6 +118,10 @@ roles retain approval and Git authority.
 
 ## Alpha boundary
 
-This release is for one trusted computer or a controlled local pilot. It is not an
-internet deployment: the server deliberately refuses non-loopback binding and does
-not provide TLS, email recovery, federation, or hosted secret management.
+The core Alpha remains a local-first product. The normal SAD API deliberately refuses
+non-loopback binding. The optional Mobile Preview is a separate paired TLS gateway
+restricted to an explicit private/approved overlay address; it must not be
+port-forwarded to the public internet.
+
+Public internet hosting, hosted TLS termination, email recovery, federation/external
+identity, and hosted secret management remain outside Alpha.

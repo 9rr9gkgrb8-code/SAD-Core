@@ -11,6 +11,7 @@ import mimetypes
 from auth import AuthService
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
+from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
@@ -23,10 +24,11 @@ MAX_REQUEST_BYTES = 2_000_000
 
 
 class SadApiService:
-    def __init__(self, auth=None, dashboard=None, progress=None):
+    def __init__(self, auth=None, dashboard=None, progress=None, mobile_access=None):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
         self.progress = progress or ProgressStore(Path(__file__).with_name("student_progress.json"))
+        self.mobile_access = mobile_access or MobileAccessStore()
 
     def token(self, headers):
         value = headers.get("Authorization", "")
@@ -66,6 +68,18 @@ class SadApiService:
         match = re.fullmatch(r"/v1/accounts/([0-9a-f-]+)/active", path)
         if method == "POST" and match:
             return 200, self.auth.set_account_active(match.group(1), body.get("active"), token)
+
+        if method == "POST" and path == "/v1/mobile/pairings":
+            self.auth.require(token, "account:manage")
+            return 201, self.mobile_access.create_pairing(body.get("label", "Phone"), body.get("mode", "learning"))
+        if method == "GET" and path == "/v1/mobile/devices":
+            self.auth.require(token, "account:manage")
+            return 200, {"devices": self.mobile_access.list_devices()}
+        match = re.fullmatch(r"/v1/mobile/devices/([0-9a-f-]+)/revoke", path)
+        if method == "POST" and match:
+            self.auth.require(token, "account:manage")
+            return 200, self.mobile_access.revoke_device(match.group(1))
+
         if method == "POST" and path == "/v1/failures":
             event = FailureEvent(
                 body.get("source", "user"), body["category"], body["summary"],
@@ -169,7 +183,7 @@ class SadApiHandler(BaseHTTPRequestHandler):
 
     def _handle(self):
         try:
-            if self.command == "GET" and (self.path == "/" or self.path.startswith("/ui/")):
+            if self.command == "GET" and (self.path in {"/", "/manifest.webmanifest", "/sw.js"} or self.path.startswith("/ui/")):
                 return self._serve_ui()
             length = int(self.headers.get("Content-Length", "0"))
             if length < 0 or length > MAX_REQUEST_BYTES:
@@ -185,19 +199,26 @@ class SadApiHandler(BaseHTTPRequestHandler):
             self._respond(400, {"error": str(error)})
 
     def _serve_ui(self):
-        relative = "index.html" if self.path == "/" else self.path.removeprefix("/ui/")
+        mapping = {"/": "index.html", "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js"}
+        relative = mapping.get(self.path)
+        if relative is None and self.path.startswith("/ui/"):
+            relative = self.path.removeprefix("/ui/")
         root = Path(__file__).with_name("web").resolve()
-        target = (root / relative).resolve()
+        target = (root / (relative or "")).resolve()
         if target == root or not target.is_relative_to(root) or not target.is_file():
             return self._respond(404, {"error": "UI asset not found."})
         content = target.read_bytes()
+        content_type = "application/manifest+json" if target.name.endswith(".webmanifest") else mimetypes.guess_type(target.name)[0]
         self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
+        self.send_header("Content-Type", content_type or "application/octet-stream")
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if target.name == "sw.js":
+            self.send_header("Service-Worker-Allowed", "/")
         self.end_headers()
         self.wfile.write(content)
 

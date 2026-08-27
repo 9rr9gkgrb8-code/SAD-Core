@@ -2,13 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#101c19">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SAD Forge">
   <title>SAD + Forge Alpha</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/ui/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/ui/icon.svg">
   <link rel="stylesheet" href="/ui/styles.css">
   <link rel="stylesheet" href="/ui/owner_dashboard.css">
 </head>
 <body>
   <main>
+    <section id="pairing" class="card login-card" hidden>
+      <p class="eyebrow">SAD MOBILE</p><h1>Pair this phone</h1>
+      <p class="muted">A local Owner must create a one-time pairing code before this phone can reach SAD. Pairing trusts the device; your normal account sign-in still controls what you can do.</p>
+      <form id="pairing-form">
+        <label>8-digit pairing code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{8}" maxlength="8" required></label>
+        <label>Phone name<input name="device_label" autocomplete="off" maxlength="80" placeholder="Kenneth's iPhone" required></label>
+        <button>Pair phone</button><p id="pairing-error" class="error" role="alert"></p>
+      </form>
+      <p id="paired-device" class="muted" role="status" aria-live="polite"></p>
+    </section>
+
     <section id="login" class="card login-card">
       <p class="eyebrow">SAD + FORGE</p><h1>Your learning command center</h1>
       <p class="muted">Private, local, and controlled by your account.</p>
@@ -17,7 +35,7 @@
       <button>Sign in</button><p id="login-error" class="error" role="alert"></p></form>
     </section>
     <section id="app" hidden>
-      <header><div><p class="eyebrow">SAD + FORGE ALPHA 1</p><h1 id="welcome">Welcome</h1></div><div class="header-actions"><span id="role" class="pill"></span><button id="logout" class="secondary">Sign out</button></div></header>
+      <header><div><p class="eyebrow">SAD + FORGE ALPHA 1</p><h1 id="welcome">Welcome</h1></div><div class="header-actions"><span id="connection-state" class="pill connection-pill">Online</span><span id="role" class="pill"></span><button id="install-app" class="secondary" hidden>Install app</button><button id="logout" class="secondary">Sign out</button></div></header>
       <nav id="nav" aria-label="Main navigation"></nav>
       <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true"></p>
 
@@ -92,7 +110,22 @@
 
       <section id="accounts" class="view card" hidden><p class="eyebrow">ACCOUNT CONTROL</p><h2 tabindex="-1">People and permissions</h2><form id="account-form" class="grid"><label>Username<input name="username" required></label><label>Temporary password<input name="password" type="password" required></label><label>Role<select name="role"><option>student</option><option>teacher</option><option>developer</option><option>reviewer</option><option>viewer</option></select></label><button>Create account</button></form><div id="accounts-output"></div></section>
 
-      <section id="settings" class="view card" hidden><p class="eyebrow">ACCOUNT SECURITY</p><h2 tabindex="-1">Change your password</h2><form id="password-form"><label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label><button>Change password</button></form></section>
+      <section id="mobile" class="view card" hidden>
+        <p class="eyebrow">MOBILE ACCESS</p><h2 tabindex="-1">Pair and control phones</h2>
+        <p class="muted">Pairing is an extra device trust layer. Every paired phone still requires its own SAD account login.</p>
+        <div class="mobile-access-grid">
+          <form id="mobile-pairing-form">
+            <label>Phone label<input name="label" maxlength="80" placeholder="Family iPhone" required></label>
+            <label>Device mode<select name="mode"><option value="learning">Learning only</option><option value="full_role">Full signed-in role</option></select></label>
+            <button>Create 5-minute pairing code</button>
+          </form>
+          <article id="mobile-pairing-output" class="mobile-pairing-output" aria-live="polite"><strong>No active code.</strong><span class="muted">Learning-only is the safer default for student phones.</span></article>
+        </div>
+        <div class="mobile-device-heading"><h3>Paired devices</h3><button id="refresh-mobile" class="secondary">Refresh</button></div>
+        <div id="mobile-devices-output"></div>
+      </section>
+
+      <section id="settings" class="view card" hidden><p class="eyebrow">ACCOUNT SECURITY</p><h2 tabindex="-1">Change your password</h2><form id="password-form"><label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label><button>Change password</button></form><button id="forget-device" class="secondary mobile-device-only" hidden>Forget this paired phone</button></section>
     </section>
-  </main><script src="/ui/app.js" defer></script><script src="/ui/owner_dashboard.js" defer></script>
+  </main><script src="/ui/mobile.js" defer></script><script src="/ui/app.js" defer></script><script src="/ui/owner_dashboard.js" defer></script>
 </body></html>

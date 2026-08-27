@@ -21,7 +21,9 @@ jobs:
       - name: Browser syntax
         run: |
           node --check web/app.js
+          node --check web/mobile.js
           node --check web/owner_dashboard.js
+          node --check web/sw.js
       - name: Full suite
         run: python -m unittest -v
       - name: Alpha release gate
