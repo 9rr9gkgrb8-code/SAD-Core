@@ -54,6 +54,9 @@ project and protected Git topology before and after execution, removes Git
 credentials from the worker environment, checks context root against execution
 root, and records ordered evidence. Any integrity or authority failure blocks
 approval with `isolation_failed`. Git operations remain host/human controlled.
+Production verification additionally requires Docker and a preloaded digest-pinned
+image configured through `SAD_SANDBOX_IMAGE`. Missing runtime configuration records
+`isolation_unavailable`; SAD never falls back to same-user Python execution.
 
 ## Local Data
 

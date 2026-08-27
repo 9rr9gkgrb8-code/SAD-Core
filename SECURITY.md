@@ -8,19 +8,21 @@
 - Developer sessions can inspect or perform assigned work but cannot exercise owner
   governance.
 - Local-model traffic is restricted to an HTTP loopback endpoint.
-- Repair workers receive a minimal environment without common credential variables.
+- Repair verification fails closed unless Docker and a digest-pinned, preloaded
+  `SAD_SANDBOX_IMAGE` are available.
+- Containers run without network, capabilities, privilege escalation, Git
+  metadata, or a writable root filesystem. The proposal is mounted read-only;
+  process, memory, CPU, time, and temporary-storage limits apply.
 - A patch may target exactly one allow-listed root file and must match the source
   hash recorded when its proposal was created.
 
-## Important limitation
+## Runtime requirement
 
-The Python proposal directory is an integrity-monitored workspace, not an OS-level
-security sandbox. The code detects changes to the live project and Git topology,
-but Python alone cannot reliably prevent a hostile child process from accessing the
-network, other processes, or files permitted to the current operating-system user.
-Run untrusted repair workers in a separate OS/container sandbox with no network,
-Git metadata, or credentials. Human approval remains mandatory before applying any
-patch.
+Docker must be installed and the configured image must already exist locally under
+the exact digest in `SAD_SANDBOX_IMAGE`. SAD never pulls an image during repair
+verification and never falls back to same-user Python execution. Host-side live
+project and Git-topology verification still runs before and after the container.
+Human approval remains mandatory before applying any patch.
 
 ## Reporting
 

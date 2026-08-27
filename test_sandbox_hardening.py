@@ -37,9 +37,9 @@ class SandboxHardeningTests(unittest.TestCase):
         completed = type("Result", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
         with patch.object(sandbox, "SANDBOX_DIRECTORY", self.sandbox_root), \
              patch.object(sandbox, "snapshot_live_project", side_effect=[{"a": "1"}, {"a": "1"}]), \
-             patch.object(sandbox, "snapshot_git_topology", side_effect=[{"config.worktree": "missing"}, {"config.worktree": "created"}]), \
-             patch.object(sandbox.subprocess, "run", return_value=completed):
-            result = sandbox.run_sandbox_tests(self.proposal)
+             patch.object(sandbox, "snapshot_git_topology", side_effect=[{"config.worktree": "missing"}, {"config.worktree": "created"}]):
+            runner = type("Runner", (), {"run_tests": lambda self, path: completed})()
+            result = sandbox.run_sandbox_tests(self.proposal, runner=runner)
         self.assertEqual(result["status"], "isolation_failed")
         self.assertFalse(result["git_topology_integrity"])
         self.assertEqual([e["sequence"] for e in result["ordered_evidence"]], list(range(1, 8)))

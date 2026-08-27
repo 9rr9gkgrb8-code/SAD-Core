@@ -33,7 +33,7 @@ class SecuritySurfaceTests(unittest.TestCase):
                     process_files.add(path.name)
                 if any(name.startswith(("urllib", "http", "socket", "requests")) for name in names):
                     network_files.add(path.name)
-        self.assertEqual(process_files, {"app.py", "sandbox.py"})
+        self.assertEqual(process_files, {"app.py", "container_sandbox.py"})
         self.assertEqual(network_files, {"model_adapter.py"})
 
 

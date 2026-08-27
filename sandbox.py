@@ -5,11 +5,11 @@ import difflib
 import hashlib
 import os
 import shutil
-import subprocess
-import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from container_sandbox import DockerSandboxRunner, SandboxResult, SandboxUnavailable
 
 
 PROJECT_DIRECTORY = Path(__file__).parent
@@ -157,8 +157,8 @@ def create_sandbox_proposal(failure_id, target_file, proposal_summary):
     return proposal, sandbox_path
 
 
-def run_sandbox_tests(sandbox_path):
-    """Run the project test suite in the isolated copy, never in the live project."""
+def run_sandbox_tests(sandbox_path, runner=None):
+    """Run tests through a genuine container boundary; never fall back locally."""
     sandbox_path = validate_sandbox_path(sandbox_path)
     live_before = snapshot_live_project()
     git_before = snapshot_git_topology()
@@ -172,27 +172,29 @@ def run_sandbox_tests(sandbox_path):
         _evidence("context_execution_root_checked", {"passed": context_ok}),
         _evidence("host_only_git_authority_checked", {"passed": authority_ok}),
     ]
-    result = subprocess.run(
-        [sys.executable, "-m", "unittest", "-v"],
-        cwd=sandbox_path,
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-        env=worker_environment,
-    )
+    runner = runner or DockerSandboxRunner()
+    isolation_unavailable = None
+    try:
+        result = runner.run_tests(sandbox_path)
+    except SandboxUnavailable as error:
+        isolation_unavailable = str(error)
+        result = SandboxResult(126, "", isolation_unavailable)
 
     live_after = snapshot_live_project()
     git_after = snapshot_git_topology()
     integrity_ok = live_before == live_after and git_before == git_after
     evidence.append(_evidence("tests_finished", {"returncode": result.returncode}))
+    if isolation_unavailable:
+        evidence.append(_evidence("container_isolation_unavailable", {"reason": isolation_unavailable}))
     evidence.append(_evidence("integrity_verified", {"passed": integrity_ok}))
     for sequence, event in enumerate(evidence, 1):
         event["sequence"] = sequence
 
     proposal_path = sandbox_path / "proposal.json"
     proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
-    if not integrity_ok or not authority_ok or not context_ok:
+    if isolation_unavailable:
+        proposal["status"] = "isolation_unavailable"
+    elif not integrity_ok or not authority_ok or not context_ok:
         proposal["status"] = "isolation_failed"
     else:
         proposal["status"] = "sandbox_tests_passed" if result.returncode == 0 else "sandbox_tests_failed"
