@@ -67,9 +67,12 @@ class ConversationStore:
         return data
 
     def _save(self, data):
+        serialized = json.dumps(data, indent=2)
+        if len(serialized.encode("utf-8")) > MAX_CHAT_FILE_BYTES:
+            raise ValueError("Chat history storage limit reached. Archive conversations before continuing.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary.write_text(serialized, encoding="utf-8")
         try:
             os.chmod(temporary, 0o600)
         except OSError:
