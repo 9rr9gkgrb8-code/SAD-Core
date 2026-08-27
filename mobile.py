@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import threading
 
+from alpha import ensure_owner
 from api import SadApiService, create_server
 from auth import AuthService
 from failure_dashboard import FailureDashboard
@@ -29,6 +30,8 @@ def main():
     port = int(os.environ.get("SAD_MOBILE_PORT", str(DEFAULT_MOBILE_PORT)))
 
     service, access = build_shared_service()
+    if ensure_owner(service.auth) is False:
+        return
     desktop = create_server(service=service)
     mobile = create_mobile_server(host, port, certfile, keyfile, service=service, access=access)
 
