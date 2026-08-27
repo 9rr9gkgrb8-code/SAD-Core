@@ -6,6 +6,7 @@ SAD Mobile is an optional paired phone surface for the local-first Alpha. It doe
 
 - Responsive phone-first SAD + Forge browser UI
 - Free-form **SAD Chat** with durable per-account conversation history and follow-up context
+- **Code Workspace** shell for authorized full-role development accounts
 - Installable Progressive Web App metadata and service worker
 - iPhone/iPad standalone/home-screen support through Safari
 - Android install prompt support where the browser exposes it
@@ -20,7 +21,7 @@ SAD Mobile is an optional paired phone surface for the local-first Alpha. It doe
 - Explicit private/overlay IPv4 binding only; wildcard and public IP bindings are refused
 - Mobile preflight doctor
 - Combined desktop + mobile launcher
-- Service worker caches only static shell files; API, pairing, chat, student, account, and repair traffic is never cached
+- Service worker caches only static shell files; API, pairing, chat, coding-workspace, student, account, and repair traffic is never cached
 
 ## SAD Chat on a phone
 
@@ -36,7 +37,20 @@ A signed-in person can:
 
 When the local model is configured and running, the phone is simply the secure client: the host PC generates the AI response and sends it back through the paired TLS gateway. If the local model is unavailable, the UI says so and SAD falls back to its built-in dialogue layer rather than pretending a full model answered.
 
-Conversation text does not grant repair, tool, approval, or Git authority.
+Conversation text does not grant repair, coding-workspace, tool, approval, or Git authority.
+
+## Code Workspace on a phone
+
+Code Workspace is available only through a `full_role` paired phone whose signed-in account already has development permissions.
+
+- **Owner:** may plan scope, create/execute isolated coding, inspect the exact diff/tests, apply the tested workspace, and roll it back.
+- **Developer:** may plan scope, create/execute isolated coding, and inspect evidence. Live apply/rollback remains denied.
+- **Reviewer / Viewer:** inspection-only according to their existing development permissions.
+- **Student / Teacher:** no Code Workspace access.
+
+The phone never runs the coding model or Docker locally. The Windows/Linux host does the generation and isolated verification, then returns status/diff evidence to the phone.
+
+`learning` device mode blocks all `/v1/dev/workspaces*` routes before SAD account RBAC is reached.
 
 ## Authority model
 
@@ -54,11 +68,11 @@ Use this for student/family phones by default. The gateway permits only:
 - Forge completion
 - own Forge progress
 
-It blocks dashboard, account administration, teacher roster, repair, and mobile-device administration routes before normal SAD role authorization is reached. Chat routes are allow-listed explicitly, so the chat prefix cannot become a tunnel to future privileged endpoints.
+It blocks Code Workspace, dashboard, account administration, teacher roster, repair, and mobile-device administration routes before normal SAD role authorization is reached. Chat routes are allow-listed explicitly, so the chat prefix cannot become a tunnel to future privileged endpoints.
 
 ### Full role mode
 
-The paired phone may reach the normal API surface, but SAD's existing account permissions still apply. A Student account remains a Student account. An Owner account can use Owner controls only after signing in as Owner.
+The paired phone may reach the normal API surface, but SAD's existing account permissions still apply. A Student account remains a Student account. A Developer may use isolated coding but cannot apply it. An Owner account can use Owner controls only after signing in as Owner.
 
 Use `full_role` only for a device you intend to trust with the signed-in role's full authority.
 
@@ -126,7 +140,8 @@ The desktop/core endpoint remains loopback-only.
 7. Enter the 8-digit code and phone name.
 8. After pairing succeeds, sign in using the person's normal SAD account.
 9. **SAD Chat** opens as the primary conversation view.
-10. The Owner can revoke the phone at any time from **Mobile Access**.
+10. Authorized full-role development accounts also receive **Code Workspace**.
+11. The Owner can revoke the phone at any time from **Mobile Access**.
 
 Revoking a device invalidates its device credential even if the browser still has the cookie.
 
@@ -139,7 +154,7 @@ After the HTTPS page is trusted and paired:
 3. Choose **Add to Home Screen**.
 4. Launch **SAD Forge** from the new home-screen icon.
 
-Account sessions remain intentionally memory-based. A person may need to sign in again after a SAD server restart even though the phone itself remains paired. Saved SAD conversations remain on the host and can be reopened after signing back in.
+Account sessions remain intentionally memory-based. A person may need to sign in again after a SAD server restart even though the phone itself remains paired. Saved SAD conversations and Developer Workspace state remain on the host and can be reopened after signing back in with the appropriate role.
 
 ## Install on Android
 
@@ -147,24 +162,25 @@ After opening the trusted HTTPS page, supported Chromium-based browsers can surf
 
 ## Offline behavior
 
-The app shell may open while offline, but private functions require a live connection to the host. SAD does not cache API responses, chat requests/replies, study output, account data, repair evidence, student records, bearer sessions, or mobile device credentials in the service worker.
+The app shell may open while offline, but private functions require a live connection to the host. SAD does not cache API responses, chat requests/replies, Developer Workspace diffs/test output, study output, account data, repair evidence, student records, bearer sessions, or mobile device credentials in the service worker.
 
 ## Mobile security checks
 
 The automated suite verifies:
 
 - public/wildcard binding refusal
-- learning-mode route isolation, including explicit personal-chat route matching
+- learning-mode route isolation, including explicit personal-chat matching and Developer Workspace denial
 - full-role mode continuing to rely on SAD RBAC
+- Developer-vs-Owner Code Workspace authority
 - pairing attempt rate limiting
 - TLS material required before startup
 - owner-only pairing administration
 - single-use/expiring pairing codes
 - hashed-at-rest pairing/device secrets
 - device revocation
-- API/pairing/chat exclusion from service-worker caching
+- API/pairing/chat/coding-data exclusion from service-worker caching
 - per-account conversation ownership
-- phone chat UI and touch/safe-area rules
+- phone chat/Code Workspace UI touch and narrow-screen rules
 
 ## Current mobile designation
 
