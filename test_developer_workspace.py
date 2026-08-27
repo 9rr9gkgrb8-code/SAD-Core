@@ -61,11 +61,11 @@ class DeveloperWorkspaceTests(unittest.TestCase):
                 generator=lambda _prompt: json.dumps({"summary": "unsafe", "paths": [".github/workflows/ci.yml"]}),
             )
 
-    def test_workspace_copy_keeps_test_metadata_but_never_git_control(self):
+    def test_workspace_copy_excludes_git_and_repository_control_plane(self):
         created = self.store.create("edit a", ["a.py"], "owner-id")
         worktree = self.root / ".sad_dev" / created["workspace_id"] / "worktree"
         self.assertFalse((worktree / ".git").exists())
-        self.assertTrue((worktree / ".github" / "workflows" / "ci.yml").is_file())
+        self.assertFalse((worktree / ".github").exists())
 
     def test_multi_file_generation_tests_without_touching_live_project(self):
         created = self.store.create("update two files and add one", ["a.py", "web/app.js", "new.py"], "developer-id")
