@@ -22,6 +22,7 @@ REQUIRED_PATHS = (
     "sandbox.py",
     "test_alpha_doctor.py",
     "test_alpha_product.py",
+    "test_forge_game_ui.py",
     "test_web_accessibility.py",
     "web/app.js",
     "web/index.html",
