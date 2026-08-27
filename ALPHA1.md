@@ -34,6 +34,15 @@ Each person receives a separate credential. Students never see developer control
 - Explicit review, push, isolation approval, isolated execution, decision, and close controls
 - Password change and session revocation
 
+## Acceptance
+
+Before widening a local pilot, run the scenarios in `ALPHA_UAT.md`. They cover every
+role, security boundaries, keyboard and screen-reader use, zoom/mobile layout, stop
+conditions, and the evidence required before calling a candidate Alpha-ready.
+
+Automated accessibility checks run with the normal unit suite, but they are a
+regression net rather than a substitute for the manual accessibility pass.
+
 ## Private data and backups
 
 `accounts.json`, `dashboard_state.json`, `student_progress.json`, `failures.json`,
