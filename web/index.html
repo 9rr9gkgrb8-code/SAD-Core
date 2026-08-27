@@ -18,27 +18,27 @@
     <section id="app" hidden>
       <header><div><p class="eyebrow">SAD + FORGE ALPHA 1</p><h1 id="welcome">Welcome</h1></div><div class="header-actions"><span id="role" class="pill"></span><button id="logout" class="secondary">Sign out</button></div></header>
       <nav id="nav" aria-label="Main navigation"></nav>
-      <p id="notice" class="notice" role="status"></p>
+      <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true"></p>
 
       <section id="study" class="view card">
-        <div class="section-title"><div><p class="eyebrow">PERSONAL STUDY</p><h2>Tell SAD exactly how to help</h2></div></div>
+        <div class="section-title"><div><p class="eyebrow">PERSONAL STUDY</p><h2 tabindex="-1">Tell SAD exactly how to help</h2></div></div>
         <form id="study-form"><div class="grid"><label>Help type<select name="action"><option value="break_down">Break it down</option><option value="teach_method">Teach the method</option><option value="walkthrough">Walkthrough</option><option value="check_work">Check my work</option><option value="hint">Give a hint</option><option value="direct_answer">Direct answer</option><option value="proofread">Proofread</option><option value="edit_essay">Edit essay</option><option value="rubric_review">Rubric review</option><option value="example_essay">Example essay</option><option value="expand_word_count">Expand word count</option></select></label><label>Course<input name="course" placeholder="Algebra, English…"></label></div>
         <label>Your material<textarea name="material" rows="9" required placeholder="Paste the problem, draft, rubric, or assignment here."></textarea></label>
         <div class="grid"><label>Depth<select name="requested_depth"><option>standard</option><option>concise</option><option>deep</option></select></label><label>Target words<input name="target_word_count" type="number" min="1" max="100000"></label></div>
-        <label class="check"><input name="graded" type="checkbox"> This is graded work</label><button>Generate help</button></form><article id="study-output" class="output" hidden></article>
+        <label class="check"><input name="graded" type="checkbox"> This is graded work</label><button>Generate help</button></form><article id="study-output" class="output" tabindex="-1" aria-live="polite" aria-atomic="true" hidden></article>
       </section>
 
-      <section id="forge" class="view card" hidden><p class="eyebrow">FORGE STUDENT</p><h2>Turn homework into a quest</h2><div id="progress" class="stats"></div>
-        <form id="quest-form"><label>Subject<input name="subject" required></label><label>Assignment<textarea name="assignment" rows="6" required></textarea></label><label>Learning goal<input name="learning_objective"></label><button>Create quest</button></form><article id="quest-output" class="output" hidden></article><div id="quest-actions" hidden><button id="hint" class="secondary">Get next hint</button><form id="complete-form" class="grid"><label>Mastery score (0–100)<input name="score" type="number" min="0" max="100" required></label><label class="check"><input name="boss_passed" type="checkbox"> Boss check passed</label><button>Complete quest</button></form></div>
+      <section id="forge" class="view card" hidden><p class="eyebrow">FORGE STUDENT</p><h2 tabindex="-1">Turn homework into a quest</h2><div id="progress" class="stats" aria-live="polite" aria-atomic="true"></div>
+        <form id="quest-form"><label>Subject<input name="subject" required></label><label>Assignment<textarea name="assignment" rows="6" required></textarea></label><label>Learning goal<input name="learning_objective"></label><button>Create quest</button></form><article id="quest-output" class="output" tabindex="-1" aria-live="polite" aria-atomic="true" hidden></article><div id="quest-actions" hidden><button id="hint" class="secondary">Get next hint</button><form id="complete-form" class="grid"><label>Mastery score (0–100)<input name="score" type="number" min="0" max="100" required></label><label class="check"><input name="boss_passed" type="checkbox"> Boss check passed</label><button>Complete quest</button></form></div>
       </section>
 
-      <section id="dashboard" class="view card" hidden><p class="eyebrow">OWNER / DEVELOPMENT</p><h2>Failure and repair control</h2><button id="refresh-dashboard" class="secondary">Refresh</button><div id="dashboard-output"></div></section>
+      <section id="dashboard" class="view card" hidden><p class="eyebrow">OWNER / DEVELOPMENT</p><h2 tabindex="-1">Failure and repair control</h2><button id="refresh-dashboard" class="secondary">Refresh</button><div id="dashboard-output"></div></section>
 
-      <section id="classroom" class="view card" hidden><p class="eyebrow">TEACHER VIEW</p><h2>Student progress</h2><button id="refresh-classroom" class="secondary">Refresh</button><div id="classroom-output"></div></section>
+      <section id="classroom" class="view card" hidden><p class="eyebrow">TEACHER VIEW</p><h2 tabindex="-1">Student progress</h2><button id="refresh-classroom" class="secondary">Refresh</button><div id="classroom-output"></div></section>
 
-      <section id="accounts" class="view card" hidden><p class="eyebrow">ACCOUNT CONTROL</p><h2>People and permissions</h2><form id="account-form" class="grid"><label>Username<input name="username" required></label><label>Temporary password<input name="password" type="password" required></label><label>Role<select name="role"><option>student</option><option>teacher</option><option>developer</option><option>reviewer</option><option>viewer</option></select></label><button>Create account</button></form><div id="accounts-output"></div></section>
+      <section id="accounts" class="view card" hidden><p class="eyebrow">ACCOUNT CONTROL</p><h2 tabindex="-1">People and permissions</h2><form id="account-form" class="grid"><label>Username<input name="username" required></label><label>Temporary password<input name="password" type="password" required></label><label>Role<select name="role"><option>student</option><option>teacher</option><option>developer</option><option>reviewer</option><option>viewer</option></select></label><button>Create account</button></form><div id="accounts-output"></div></section>
 
-      <section id="settings" class="view card" hidden><p class="eyebrow">ACCOUNT SECURITY</p><h2>Change your password</h2><form id="password-form"><label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label><button>Change password</button></form></section>
+      <section id="settings" class="view card" hidden><p class="eyebrow">ACCOUNT SECURITY</p><h2 tabindex="-1">Change your password</h2><form id="password-form"><label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label><button>Change password</button></form></section>
     </section>
   </main><script src="/ui/app.js" defer></script>
 </body></html>
