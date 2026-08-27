@@ -23,9 +23,12 @@ REQUIRED_PATHS = (
     "test_alpha_doctor.py",
     "test_alpha_product.py",
     "test_forge_game_ui.py",
+    "test_owner_repair_ui.py",
     "test_web_accessibility.py",
     "web/app.js",
     "web/index.html",
+    "web/owner_dashboard.css",
+    "web/owner_dashboard.js",
     "web/styles.css",
 )
 
