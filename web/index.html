@@ -28,8 +28,61 @@
         <label class="check"><input name="graded" type="checkbox"> This is graded work</label><button>Generate help</button></form><article id="study-output" class="output" tabindex="-1" aria-live="polite" aria-atomic="true" hidden></article>
       </section>
 
-      <section id="forge" class="view card" hidden><p class="eyebrow">FORGE STUDENT</p><h2 tabindex="-1">Turn homework into a quest</h2><div id="progress" class="stats" aria-live="polite" aria-atomic="true"></div>
-        <form id="quest-form"><label>Subject<input name="subject" required></label><label>Assignment<textarea name="assignment" rows="6" required></textarea></label><label>Learning goal<input name="learning_objective"></label><button>Create quest</button></form><article id="quest-output" class="output" tabindex="-1" aria-live="polite" aria-atomic="true" hidden></article><div id="quest-actions" hidden><button id="hint" class="secondary">Get next hint</button><form id="complete-form" class="grid"><label>Mastery score (0–100)<input name="score" type="number" min="0" max="100" required></label><label class="check"><input name="boss_passed" type="checkbox"> Boss check passed</label><button>Complete quest</button></form></div>
+      <section id="forge" class="view forge-view" hidden>
+        <div class="forge-hero card">
+          <div class="forge-hero-copy">
+            <p class="eyebrow">FORGE STUDENT</p>
+            <h2 tabindex="-1">Your learning adventure</h2>
+            <p class="muted">Turn real homework into quests. Learn the method, unlock hints only when needed, clear the boss check, and grow your companion through mastery.</p>
+            <div id="progress" class="forge-progress" aria-live="polite" aria-atomic="true"></div>
+          </div>
+          <div class="companion-panel" aria-label="Companion progression">
+            <div id="companion-orb" class="companion-orb" aria-hidden="true"><span>✦</span></div>
+            <p class="eyebrow">COMPANION</p>
+            <strong id="companion-name">Initiate Egg</strong>
+            <span id="companion-note" class="muted">Master quests to evolve.</span>
+          </div>
+        </div>
+
+        <div class="forge-layout">
+          <section class="card quest-board">
+            <div class="section-title">
+              <div><p class="eyebrow">QUEST BOARD</p><h3>Choose your challenge</h3></div>
+              <span class="quest-badge">Homework → Quest</span>
+            </div>
+            <form id="quest-form">
+              <div class="grid"><label>Subject<input name="subject" required placeholder="Algebra, Biology, History…"></label><label>Learning goal<input name="learning_objective" placeholder="What do you want to understand?"></label></div>
+              <label>Assignment<textarea name="assignment" rows="6" required placeholder="Paste the homework, problem, or assignment here."></textarea></label>
+              <button>Create quest</button>
+            </form>
+          </section>
+
+          <aside class="card journey-panel" aria-labelledby="journey-heading">
+            <p class="eyebrow">JOURNEY</p>
+            <h3 id="journey-heading">Mastery path</h3>
+            <ol id="rank-path" class="rank-path">
+              <li data-rank="Initiate"><span></span>Initiate</li>
+              <li data-rank="Apprentice"><span></span>Apprentice</li>
+              <li data-rank="Journeyman"><span></span>Journeyman</li>
+              <li data-rank="Expert"><span></span>Expert</li>
+              <li data-rank="Master"><span></span>Master</li>
+            </ol>
+            <div class="journey-rule"><strong>Mastery rule</strong><span>Score 80%+ and pass the boss check.</span></div>
+          </aside>
+        </div>
+
+        <section id="active-quest" class="card active-quest" hidden>
+          <div class="active-quest-header"><div><p class="eyebrow">ACTIVE QUEST</p><h3 id="quest-title">Quest</h3></div><span id="quest-subject" class="quest-badge"></span></div>
+          <p id="quest-objective" class="quest-objective"></p>
+          <div class="quest-columns">
+            <div><h4>Challenge</h4><article id="quest-output" class="output quest-output" tabindex="-1" aria-live="polite" aria-atomic="true" hidden></article></div>
+            <div class="hint-panel"><h4>Hint ladder</h4><ol id="hint-ladder" class="hint-ladder"><li data-level="nudge">Nudge</li><li data-level="stronger_hint">Stronger hint</li><li data-level="worked_example">Worked example</li><li data-level="explanation">Explanation</li></ol><button id="hint" class="secondary">Unlock next hint</button><p id="hint-status" class="muted" aria-live="polite">No hints used yet.</p></div>
+          </div>
+          <div id="quest-actions" class="boss-gate" hidden>
+            <div><p class="eyebrow">BOSS GATE</p><h4>Prove you own the method</h4><p id="boss-prompt" class="muted"></p></div>
+            <form id="complete-form" class="boss-form"><label>Mastery score (0–100)<input name="score" type="number" min="0" max="100" required></label><label class="check"><input name="boss_passed" type="checkbox"> Boss check passed</label><button>Complete quest</button></form>
+          </div>
+        </section>
       </section>
 
       <section id="dashboard" class="view card" hidden><p class="eyebrow">OWNER / DEVELOPMENT</p><h2 tabindex="-1">Failure and repair control</h2><button id="refresh-dashboard" class="secondary">Refresh</button><div id="dashboard-output"></div></section>
