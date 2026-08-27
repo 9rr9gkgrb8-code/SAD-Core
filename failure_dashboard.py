@@ -11,7 +11,9 @@ import uuid
 import threading
 from functools import wraps
 
+from live_apply import apply_approved_proposal, rollback_applied_proposal
 from sad_forge_contract import Artifact, ForgeResult, RepairRequest
+from sandbox import approve_sandbox_proposal
 
 
 DASHBOARD_STATE_FILE = Path(__file__).with_name("dashboard_state.json")
@@ -233,6 +235,13 @@ class FailureDashboard:
         self._save()
         return item
 
+    def _proposal_id_for(self, item):
+        receipt = next((artifact for artifact in item.artifacts if artifact.get("kind") == "execution_receipt"), None)
+        proposal_id = ((receipt or {}).get("content") or {}).get("proposal_id")
+        if not proposal_id:
+            raise ValueError("Forge did not return an applyable proposal receipt.")
+        return proposal_id
+
     @synchronized
     def decide(self, work_item_id, decision, token):
         permission = "development:decide" if decision in {"approve", "reject"} else "development:govern"
@@ -242,10 +251,35 @@ class FailureDashboard:
             raise ValueError("Work is not awaiting a human decision.")
         if decision not in {"approve", "reject"}:
             raise ValueError("Decision must be approve or reject.")
+
+        live_receipt = None
+        proposal_id = None
+        evidence_length = len(item.evidence)
+        old_sequence = self.event_sequence
+        if decision == "approve" and actor.get("role") == "owner":
+            if not item.result or item.result.get("state") != "succeeded":
+                raise ValueError("Owner approval cannot apply a repair that failed Forge verification.")
+            proposal_id = self._proposal_id_for(item)
+            approved = approve_sandbox_proposal(proposal_id)
+            if not approved:
+                raise ValueError("The tested Forge proposal is not eligible for human approval.")
+            live_receipt = apply_approved_proposal(proposal_id)
+
         item.human_decision = decision
         item.state = DevState.APPROVED.value if decision == "approve" else DevState.REJECTED.value
         item.evidence.append(self._evidence(f"human_{decision}", actor["account_id"]))
-        self._save()
+        if live_receipt:
+            item.evidence.append(self._evidence("live_patch_applied", actor["account_id"], live_receipt))
+        try:
+            self._save()
+        except Exception:
+            item.human_decision = None
+            item.state = DevState.AWAITING_HUMAN_DECISION.value
+            del item.evidence[evidence_length:]
+            self.event_sequence = old_sequence
+            if live_receipt and proposal_id:
+                rollback_applied_proposal(proposal_id)
+            raise
         return item
 
     @synchronized
