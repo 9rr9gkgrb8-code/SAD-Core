@@ -61,7 +61,10 @@ def run_proof() -> tuple[bool, str]:
 
     with TemporaryDirectory(prefix="sad-docker-proof-") as directory:
         workspace = Path(directory)
-        (workspace / "test_isolation_boundary.py").write_text(PROOF_TEST, encoding="utf-8")
+        workspace.chmod(0o755)
+        test_file = workspace / "test_isolation_boundary.py"
+        test_file.write_text(PROOF_TEST, encoding="utf-8")
+        test_file.chmod(0o644)
         try:
             result = DockerSandboxRunner(image=image).run_tests(workspace, timeout=45)
         except SandboxUnavailable as error:
