@@ -78,15 +78,17 @@
     addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
   }
 
-  function loadChatSurface(){
-    if(!document.querySelector('link[href="/ui/chat.css"]')){
-      const style=document.createElement("link");style.rel="stylesheet";style.href="/ui/chat.css";document.head.appendChild(style);
+  function loadSurface(name){
+    const css=`/ui/${name}.css`,js=`/ui/${name}.js`;
+    if(!document.querySelector(`link[href="${css}"]`)){
+      const style=document.createElement("link");style.rel="stylesheet";style.href=css;document.head.appendChild(style);
     }
-    if(!document.querySelector('script[src="/ui/chat.js"]')){
-      const script=document.createElement("script");script.src="/ui/chat.js";script.async=false;document.head.appendChild(script);
+    if(!document.querySelector(`script[src="${js}"]`)){
+      const script=document.createElement("script");script.src=js;script.async=false;document.head.appendChild(script);
     }
   }
-  loadChatSurface();
+  loadSurface("chat");
+  loadSurface("developer_workspace");
 
   window.SADMobile={remote,headers,ensurePaired,handleApiError,forgetDevice};
 })();
