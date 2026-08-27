@@ -26,16 +26,17 @@
     sessionStorage.removeItem("sad_token");
     location.reload();
   }
-  async function ensurePaired(){
+  function verifyPairingCookie(){
+    if(!remote||!pairedMarker)return;
+    fetch("/mobile/status",{cache:"no-store"}).then(response=>{
+      if(response.ok)return;
+      pairedMarker=false;localStorage.removeItem("sad_device_paired");showPairing("This phone needs to be paired again.");
+    }).catch(()=>{});
+  }
+  function ensurePaired(){
     if(!remote){showLogin();return true}
     if(!pairedMarker){showPairing();return false}
-    try{
-      const response=await fetch("/mobile/status",{cache:"no-store"});
-      if(!response.ok)throw new Error("pairing unavailable");
-      showLogin();return true;
-    }catch(_error){
-      pairedMarker=false;localStorage.removeItem("sad_device_paired");showPairing("This phone needs to be paired again.");return false;
-    }
+    showLogin();verifyPairingCookie();return true;
   }
   function handleApiError(text){
     if(remote&&/device_pairing_required|not paired|access has expired/i.test(String(text))){
