@@ -1,8 +1,12 @@
 # SAD local API v1
 
-The API binds to loopback only and returns JSON. Protected endpoints require
+The core API binds to loopback only and returns JSON. Protected endpoints require
 `Authorization: Bearer <session token>`. Start the complete browser product with
 `python alpha.py`, or start the API alone with `python api.py`.
+
+The optional mobile surface does **not** change that core binding. `mobile.py` starts
+a separate TLS-only paired gateway on one explicit private/overlay IPv4 address while
+the normal SAD API remains on loopback.
 
 ## Core endpoints
 
@@ -15,6 +19,9 @@ The API binds to loopback only and returns JSON. Protected endpoints require
 - `POST /v1/accounts` (role-permitted account creation)
 - `POST /v1/accounts/{account_id}/active` (owner)
 - `GET /v1/students` (teacher/owner roster and progress)
+- `POST /v1/mobile/pairings` (owner; creates a one-time 5-minute device code)
+- `GET /v1/mobile/devices` (owner)
+- `POST /v1/mobile/devices/{device_id}/revoke` (owner)
 - `POST /v1/failures`
 - `POST /v1/jobs`
 - `GET /v1/jobs/{work_item_id}`
@@ -29,6 +36,27 @@ The API binds to loopback only and returns JSON. Protected endpoints require
 - `POST /v1/jobs/{work_item_id}/result`
 - `POST /v1/jobs/{work_item_id}/decision`
 - `POST /v1/jobs/{work_item_id}/close`
+
+## Mobile gateway endpoints
+
+These exist only on the paired TLS mobile gateway:
+
+- `POST /mobile/pair` — consumes a valid one-time pairing code and sets the paired-device credential as a `Secure`, `HttpOnly`, `SameSite=Strict` cookie
+- `GET /mobile/status` — verifies the paired-device cookie and returns public device metadata
+- `POST /mobile/forget` — revokes the current paired device and clears the device cookie
+
+A phone must pass the device gate **and** the normal account-login gate. Pairing never
+creates a user session and never substitutes for SAD role authorization.
+
+### Mobile device modes
+
+- `learning`: only account-self, Personal Study, Forge play, and own-progress routes
+  are admitted by the gateway.
+- `full_role`: the gateway admits the normal API surface, then SAD's existing RBAC
+  decides what the signed-in role may actually do.
+
+The device credential is hashed at rest and is never available to browser JavaScript.
+The service worker excludes `/v1/*` and `/mobile/*` traffic from caching.
 
 ### Repair decision semantics
 
