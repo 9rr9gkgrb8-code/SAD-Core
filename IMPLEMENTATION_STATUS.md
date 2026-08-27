@@ -30,13 +30,18 @@ Updated: August 27, 2026
 - GitHub CI compiles the project and runs the full test/contract/security suite.
 - The Alpha release gate is tested and enforced by CI; it verifies required release
   surfaces and blocks retired private-mode implementation markers from returning to
-  the current release tree.
-- A PR-triggered GitHub Actions verification run completed successfully with compile,
-  full unit suite and Alpha release gate all green on August 27, 2026.
+  the current release tree, including Python, docs, browser JavaScript, HTML, and CSS.
+- PR-triggered GitHub Actions verification has completed successfully with compile,
+  full unit suite, Alpha release gate, and operator preflight all green.
 - Alpha operator preflight reports core readiness separately from optional local-model
   configuration and Docker-backed repair-isolation readiness.
 - Alpha 1 browser UI provides separate role-filtered Personal Study, Forge Student,
   teacher roster, Owner/Dev dashboard, account control, and security surfaces.
+- Browser accessibility structure now has automated regression checks for form
+  labels, keyboard order, visible focus, live announcements, navigation semantics,
+  and data-table captions/column scopes.
+- A role-by-role `ALPHA_UAT.md` protocol defines owner, student, teacher, developer,
+  reviewer, viewer, security, accessibility, severity, stop, and Alpha-exit criteria.
 - Personal Study can generate full output through the explicitly configured
   loopback-only local model and reports honestly when the model is unavailable.
 - The host-controlled Forge worker turns approved jobs into isolated test evidence
@@ -50,8 +55,11 @@ Updated: August 27, 2026
   `SAD_SANDBOX_IMAGE` to its exact `name@sha256:<digest>`. This environment has no
   Docker/Podman, so real container execution cannot be demonstrated here; the
   production path records `isolation_unavailable` and does not fall back.
-- Conduct controlled user acceptance and accessibility testing with representative
-  student, teacher, owner, developer, reviewer, and viewer accounts.
+- Execute the controlled human UAT protocol with representative student, teacher,
+  owner, developer, reviewer, and viewer accounts. The protocol is defined; human
+  pilot evidence is not yet claimed as complete.
+- Perform the manual keyboard, screen-reader, 200% zoom, and narrow-viewport checks
+  in `ALPHA_UAT.md`; automated structural accessibility checks do not replace them.
 - Sessions are intentionally memory-only and require login again after API restart.
 - Internet hosting remains deliberately unsupported for Alpha 1: TLS, hosted
   secrets, email recovery, and external identity are future-beta work.
