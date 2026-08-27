@@ -27,6 +27,7 @@ REQUIRED_PATHS = (
     "mobile_gateway.py",
     "repair_planner.py",
     "sandbox.py",
+    "start_mobile.ps1",
     "test_alpha_doctor.py",
     "test_alpha_product.py",
     "test_forge_game_ui.py",
@@ -58,7 +59,7 @@ RETIRED_MARKERS = (
 )
 
 TEXT_SUFFIXES = {
-    ".py", ".md", ".json", ".yml", ".yaml", ".txt",
+    ".py", ".md", ".json", ".yml", ".yaml", ".txt", ".ps1",
     ".js", ".html", ".css", ".svg", ".webmanifest",
 }
 EXCLUDED_PARTS = {".git", ".sad_sandbox", "local_data", "__pycache__"}
