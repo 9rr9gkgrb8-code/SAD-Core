@@ -32,9 +32,17 @@ Each person receives a separate credential. Students never see developer control
   companion evolution driven by durable Forge progress
 - Teacher student-progress roster
 - Owner account administration
-- Shared role-filtered Failure Inbox and Forge job dashboard
-- Explicit review, push, isolation approval, isolated execution, decision, and close controls
+- Owner Repair Inbox that presents each failure, suggested correction, affected
+  targets, Forge sandbox evidence, and a simplified final YES/NO decision
+- One-click Owner testing that explicitly authorizes review, push, isolation approval,
+  and isolated Forge execution while preserving the same backend permission checks
+- Shared role-filtered Failure Inbox and Forge job dashboard with advanced review,
+  push, isolation approval, execution, decision, and close controls
 - Password change and session revocation
+
+The simplified Owner YES action records approval after successful Forge verification
+and closes the workflow. Alpha intentionally does not auto-merge a tested repair into
+live code; live-code application remains a separate human-authority boundary.
 
 ## Acceptance
 
