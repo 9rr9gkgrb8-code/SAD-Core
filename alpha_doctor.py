@@ -6,14 +6,13 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
 
 from container_sandbox import DockerSandboxRunner, SandboxUnavailable
+from model_adapter import validated_local_model_url
 from release_gate import run_release_gate
 
 
 ROOT = Path(__file__).resolve().parent
-LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 @dataclass(frozen=True)
@@ -46,10 +45,11 @@ def check_local_model(env=None):
         return Check("local_model", "optional", "warn", "not configured; generated study output is unavailable")
     if not model or not raw_url:
         return Check("local_model", "core", "block", "set both SAD_LOCAL_MODEL and SAD_LOCAL_MODEL_URL, or neither")
-    parsed = urlparse(raw_url)
-    if parsed.scheme != "http" or parsed.hostname not in LOOPBACK_HOSTS:
-        return Check("local_model", "core", "block", "model URL must use HTTP loopback only")
-    return Check("local_model", "optional", "pass", f"configured for {parsed.hostname}")
+    try:
+        validated_local_model_url(raw_url)
+    except ValueError as error:
+        return Check("local_model", "core", "block", str(error))
+    return Check("local_model", "optional", "pass", "configured on an HTTP loopback endpoint")
 
 
 def check_repair_isolation(env=None, runner_factory=DockerSandboxRunner):
