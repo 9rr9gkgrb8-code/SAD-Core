@@ -12,6 +12,7 @@ import uuid
 
 from sandbox import (
     PROJECT_DIRECTORY,
+    SANDBOX_DIRECTORY,
     get_sandbox_proposal,
     validate_approved_patch,
     validate_sandbox_path,
@@ -27,7 +28,7 @@ def _hash_file(path):
 
 
 def _live_target(target_file):
-    target = (PROJECT_DIRECTORY / target_file)
+    target = PROJECT_DIRECTORY / target_file
     if target.parent.resolve() != PROJECT_DIRECTORY.resolve():
         raise ValueError("Live repair target must be a repository-root file.")
     if target.is_symlink() or not target.is_file():
@@ -104,7 +105,7 @@ def rollback_applied_proposal(proposal_id):
     if proposal.get("status") != "applied_to_live_project" or receipt.get("proposal_id") != proposal_id:
         raise ValueError("That proposal is not an applied live repair.")
     target_file = proposal["target_file"]
-    sandbox_path = validate_sandbox_path(Path(PROJECT_DIRECTORY / ".sad_sandbox" / proposal_id), must_exist=True)
+    sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / proposal_id, must_exist=True)
     backup_path = sandbox_path / receipt.get("backup_file", "")
     live_target = _live_target(target_file)
     if not backup_path.is_file() or _hash_file(live_target) != receipt.get("applied_sha256"):
