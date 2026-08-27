@@ -50,6 +50,10 @@ class DockerSandboxRunner:
             raise SandboxUnavailable("The pinned sandbox image must already exist locally; automatic pulls are disabled.")
         return workspace
 
+    def preflight(self, workspace):
+        """Verify that the real container boundary is ready without executing tests."""
+        return self._preflight(workspace)
+
     def command(self, workspace):
         workspace = Path(workspace).resolve(strict=True)
         mount = f"type=bind,source={workspace},target=/workspace,readonly"

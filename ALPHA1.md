@@ -1,5 +1,21 @@
 # SAD + Forge Alpha 1
 
+## Preflight
+
+Run `python alpha_doctor.py` before the first launch or after changing local model or
+sandbox configuration. The doctor reports Alpha core readiness separately from
+repair-isolation readiness.
+
+- `ALPHA CORE: READY` means the local browser product can be started.
+- An unconfigured local model is optional; generated Personal Study output will be
+  unavailable until both `SAD_LOCAL_MODEL` and a loopback-only
+  `SAD_LOCAL_MODEL_URL` are configured.
+- `REPAIR ISOLATION: BLOCKED` means Forge repair execution remains disabled until
+  Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. It does
+  not silently fall back to same-user execution.
+
+Use `.env.example` as the configuration reference. Never commit a real `.env` file.
+
 ## Start
 
 Run `python alpha.py`, complete the one-time owner setup, then open the displayed

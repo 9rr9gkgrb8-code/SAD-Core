@@ -11,12 +11,14 @@ REQUIRED_PATHS = (
     "ALPHA1.md",
     "SECURITY.md",
     "alpha.py",
+    "alpha_doctor.py",
     "api.py",
     "auth.py",
     "container_sandbox.py",
     "failure_dashboard.py",
     "forge_worker.py",
     "sandbox.py",
+    "test_alpha_doctor.py",
     "test_alpha_product.py",
 )
 
