@@ -34,7 +34,7 @@ class SecuritySurfaceTests(unittest.TestCase):
                 if any(name.startswith(("urllib", "http", "socket", "requests")) for name in names):
                     network_files.add(path.name)
         self.assertEqual(process_files, {"app.py", "container_sandbox.py"})
-        self.assertEqual(network_files, {"api.py", "model_adapter.py", "sad_clients.py"})
+        self.assertEqual(network_files, {"api.py", "mobile_gateway.py", "model_adapter.py", "sad_clients.py"})
 
 
 if __name__ == "__main__":
