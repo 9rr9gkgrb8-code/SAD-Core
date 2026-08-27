@@ -46,7 +46,15 @@ class AlphaProductTests(unittest.TestCase):
 
     def test_alpha_launcher_preserves_existing_owner(self):
         with patch("builtins.input", side_effect=AssertionError("setup should not prompt")):
-            ensure_owner(self.auth)
+            self.assertIsNone(ensure_owner(self.auth))
+
+    def test_alpha_setup_retries_password_and_accepts_lowercase_create(self):
+        fresh = AuthService(Path(self.temp.name) / "fresh-accounts.json")
+        with patch("builtins.input", side_effect=["kenneth.niko", "create"]), patch(
+            "alpha.getpass", side_effect=["first-password1", "different-pass1", "StrongOwner123", "StrongOwner123"]
+        ):
+            self.assertTrue(ensure_owner(fresh))
+        self.assertTrue(fresh.has_owner())
 
     def test_account_lifecycle_and_teacher_student_roster(self):
         _, student = self.service.dispatch("POST", "/v1/accounts", self.headers(), {
