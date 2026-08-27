@@ -8,11 +8,11 @@ repair-isolation readiness.
 
 - `ALPHA CORE: READY` means the local browser product can be started.
 - An unconfigured local model is optional for normal Alpha use. SAD Chat falls back
-  visibly to the built-in dialogue layer, while automatic Forge repair drafting
-  requires a configured loopback-only local model.
-- `REPAIR ISOLATION: BLOCKED` means Forge repair execution remains disabled until
-  Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. It does
-  not silently fall back to same-user execution.
+  visibly to the built-in dialogue layer, while automatic repair drafting and
+  Developer Workspace planning/coding require a configured loopback-only local model.
+- `REPAIR ISOLATION: BLOCKED` means automatic code verification remains disabled
+  until Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. It
+  does not silently fall back to same-user execution.
 
 The optional paired mobile preview has its own `python mobile_doctor.py` preflight
 and is not considered ready until it reports `MOBILE GATEWAY: READY` on the actual
@@ -37,6 +37,9 @@ Each person receives a separate credential. Students never see developer control
 - **SAD Chat** as the default free-form conversation lane, with durable per-account
   conversations, new/archive/history controls, recent-turn context, and visible
   `Local AI` versus `Built-in dialogue` response status
+- **SAD Developer Workspace** for governed general-purpose coding: task → scope plan →
+  human-approved paths → multi-file isolated generation → Docker full-suite test →
+  exact diff → Owner apply/rollback
 - Personal Study with all request-directed actions and optional local-model output
 - Forge Student game-first learning surface with a quest board, active quest view,
   progressive hint ladder, boss gate, real XP/rank progress, mastery path, and
@@ -47,9 +50,9 @@ Each person receives a separate credential. Students never see developer control
   targets, Forge sandbox evidence, and the exact tested code diff before YES/NO
 - One-click Owner repair preparation that explicitly authorizes review, push,
   isolation approval, local-model repair drafting, and isolated Forge verification
-- Owner YES applies only the exact passing sandbox proposal to the corresponding
-  local live file, using a stale-source check, atomic replacement, verified hash,
-  and a preserved proposal-local backup
+- Owner YES applies only the exact passing repair proposal to the corresponding local
+  live file, using a stale-source check, atomic replacement, verified hash, and a
+  preserved proposal-local backup
 - Shared role-filtered Failure Inbox and Forge job dashboard with advanced review,
   push, isolation approval, execution, decision, and close controls
 - Optional Mobile Preview with installable PWA shell, one-time Owner pairing,
@@ -69,9 +72,36 @@ SAD Chat is conversation, not an authority bypass.
   context rather than the entire saved transcript on every request.
 - If the local model is not available, SAD explicitly labels the answer as built-in
   dialogue rather than pretending a full model generated it.
-- Conversation text cannot approve repairs, apply files, commit, push, merge, or
-  otherwise exercise governed authority. Those actions remain behind the dashboard
-  and their existing explicit role/approval checks.
+- Conversation text cannot approve repairs, create Developer Workspace authority,
+  apply files, commit, push, merge, or otherwise exercise governed authority.
+
+## Developer Workspace authority boundary
+
+Developer Workspace is the broad coding lane; the failure-driven repair flow remains
+the narrow self-correction lane.
+
+- Scope planning may suggest file names but cannot write code.
+- A human must submit the explicit approved file list before a workspace exists.
+- The coding model sees source context only for approved paths and may edit only those
+  paths inside `.sad_dev/<workspace-id>/worktree`.
+- `.git`, `.github`, environment secrets, private runtime data, local data, hidden
+  paths, other workspace/sandbox directories, and unsupported/binary file types are
+  excluded from the coding worktree/scope.
+- At most 20 paths/edits are admitted per Alpha workspace, with bounded context and
+  generated file sizes.
+- The complete repository unittest suite runs through the digest-pinned, networkless,
+  non-root Docker boundary. Failed or unavailable isolation cannot be applied.
+- Developer may plan, create, execute, and inspect. Reviewer/Viewer may inspect.
+  Student/Teacher have no Code Workspace access.
+- Only Owner may select **YES: Apply tested workspace** or rollback an application.
+- Before application SAD rechecks every live base hash and every exact post-test
+  worktree hash. Stale or tampered content blocks the entire transaction.
+- Existing changed files are backed up before the first write. A failed multi-file
+  operation restores and verifies the entire original set.
+- Developer Workspace never invokes Git. Commit/push/fetch/rebase/merge and repository
+  publication remain a separate host/human workflow.
+
+See `DEVELOPER_WORKSPACE.md` for the detailed contract.
 
 ## Repair authority boundary
 
@@ -89,7 +119,7 @@ pushes, rebases, or merges. Repository publication remains a separate host/human
 workflow.
 
 Reviewer approval remains evidence/governance approval only and does not apply a live
-file. Developer and Forge roles still cannot approve or apply their own work.
+file. Developer and Forge roles still cannot approve or apply their own repair work.
 
 ## Mobile authority boundary
 
@@ -98,45 +128,49 @@ paired-device credential and then the person must sign in through the normal SAD
 authentication system.
 
 `learning` mode allows SAD Chat plus account-self, Personal Study, Forge play, and own
-progress through an explicit route allow-list. `full_role` mode allows the normal
-route surface, but the signed-in account still has exactly its existing SAD
-permissions. Device credentials are revocable and kept from browser JavaScript in a
+progress through an explicit route allow-list. Developer Workspace is blocked.
+`full_role` mode allows the normal route surface, but the signed-in account still has
+exactly its existing SAD permissions. A Developer on a full-role phone can prepare
+and test code but cannot apply it; Owner authority is still required. Device
+credentials are revocable and kept from browser JavaScript in a
 Secure/HttpOnly/SameSite=Strict cookie.
 
-The mobile service worker never caches API, pairing, chat, student, account, repair,
-session, or device-credential traffic.
+The mobile service worker never caches API, pairing, chat, coding-workspace, student,
+account, repair, session, or device-credential traffic.
 
 ## Acceptance
 
 Before widening a local pilot, run the scenarios in `ALPHA_UAT.md`. They cover every
-role, SAD Chat account isolation and authority separation, security boundaries,
-keyboard and screen-reader use, zoom/mobile layout, stop conditions, and the evidence
-required before calling a candidate Alpha-ready.
+role, SAD Chat account isolation, Developer Workspace scope/test/apply separation,
+security boundaries, keyboard and screen-reader use, zoom/mobile layout, stop
+conditions, and the evidence required before calling a candidate Alpha-ready.
 
 Automated accessibility checks run with the normal unit suite, but they are a
 regression net rather than a substitute for the manual accessibility pass.
 
 Mobile Preview also requires host/phone validation of TLS trust, pairing, revocation,
-SAD Chat, learning-mode route isolation, full-role RBAC, install/home-screen behavior,
-and narrow-screen use before it should be treated as operational on that device.
+SAD Chat, learning-mode route isolation, full-role RBAC, Code Workspace behavior for
+full-role development accounts, install/home-screen behavior, and narrow-screen use
+before it should be treated as operational on that device.
 
 ## Private data and backups
 
 `accounts.json`, `dashboard_state.json`, `student_progress.json`, `chat_history.json`,
-`failures.json`, `.env`, `local_data/`, and `.sad_sandbox/` are local runtime data and
-are ignored by Git. Stop the app before copying those files into an encrypted backup.
-Never put that backup in the public repository.
+`failures.json`, `.env`, `local_data/`, `.sad_sandbox/`, and `.sad_dev/` are local
+runtime data and are ignored by Git. Stop the app before copying those files into an
+encrypted backup. Never put that backup in the public repository.
 
-The `.sad_sandbox/<proposal-id>/` directory also retains the approved patch and local
-pre-application backup used for repair evidence/rollback. Treat it as private runtime
-data, not repository content.
+The `.sad_sandbox/<proposal-id>/` directory retains repair evidence/backups. The
+`.sad_dev/<workspace-id>/` directory retains coding scope, isolated worktree, exact
+diff/test evidence, application receipt, and any pre-application backups. Treat both
+as private runtime data, not repository content.
 
 ## Isolation
 
-Forge verification requires Docker plus a preloaded digest-pinned image in
-`SAD_SANDBOX_IMAGE`. Without it, execution stops as `isolation_unavailable`; there
-is no local-process fallback. Forge produces repair drafts and evidence only. Human
-roles retain approval and Git authority.
+Automatic repair and Developer Workspace verification require Docker plus a preloaded
+digest-pinned image in `SAD_SANDBOX_IMAGE`. Without it, execution stops fail-closed;
+there is no local-process fallback. AI components produce drafts/evidence only.
+Human roles retain approval and Git authority.
 
 ## Alpha boundary
 

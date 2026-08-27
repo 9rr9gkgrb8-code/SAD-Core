@@ -5,6 +5,10 @@
   let pairedMarker=localStorage.getItem("sad_device_paired")==="1";
   let installPrompt=null;
   const byId=id=>document.getElementById(id);
+  const SURFACE_ASSETS={
+    chat:{css:"/ui/chat.css",js:"/ui/chat.js"},
+    developer_workspace:{css:"/ui/developer_workspace.css",js:"/ui/developer_workspace.js"},
+  };
 
   function headers(){return {}}
   function showPairing(error=""){
@@ -78,15 +82,17 @@
     addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
   }
 
-  function loadChatSurface(){
-    if(!document.querySelector('link[href="/ui/chat.css"]')){
-      const style=document.createElement("link");style.rel="stylesheet";style.href="/ui/chat.css";document.head.appendChild(style);
+  function loadSurface(name){
+    const asset=SURFACE_ASSETS[name];if(!asset)return;
+    if(!document.querySelector(`link[href="${asset.css}"]`)){
+      const style=document.createElement("link");style.rel="stylesheet";style.href=asset.css;document.head.appendChild(style);
     }
-    if(!document.querySelector('script[src="/ui/chat.js"]')){
-      const script=document.createElement("script");script.src="/ui/chat.js";script.async=false;document.head.appendChild(script);
+    if(!document.querySelector(`script[src="${asset.js}"]`)){
+      const script=document.createElement("script");script.src=asset.js;script.async=false;document.head.appendChild(script);
     }
   }
-  loadChatSurface();
+  loadSurface("chat");
+  loadSurface("developer_workspace");
 
   window.SADMobile={remote,headers,ensurePaired,handleApiError,forgetDevice};
 })();

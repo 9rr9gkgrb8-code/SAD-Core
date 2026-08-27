@@ -10,6 +10,7 @@ REQUIRED_PATHS = (
     ".github/workflows/ci.yml",
     "ALPHA1.md",
     "ALPHA_UAT.md",
+    "DEVELOPER_WORKSPACE.md",
     "MOBILE.md",
     "SECURITY.md",
     "alpha.py",
@@ -18,6 +19,7 @@ REQUIRED_PATHS = (
     "auth.py",
     "container_sandbox.py",
     "conversation.py",
+    "developer_workspace.py",
     "docker_proof.py",
     "failure_dashboard.py",
     "forge_worker.py",
@@ -34,6 +36,9 @@ REQUIRED_PATHS = (
     "test_chat_api.py",
     "test_chat_ui.py",
     "test_conversation.py",
+    "test_developer_workspace.py",
+    "test_developer_workspace_api.py",
+    "test_developer_workspace_ui.py",
     "test_forge_game_ui.py",
     "test_live_repair.py",
     "test_mobile_access.py",
@@ -44,6 +49,8 @@ REQUIRED_PATHS = (
     "web/app.js",
     "web/chat.css",
     "web/chat.js",
+    "web/developer_workspace.css",
+    "web/developer_workspace.js",
     "web/icon.svg",
     "web/index.html",
     "web/manifest.webmanifest",
@@ -68,7 +75,7 @@ TEXT_SUFFIXES = {
     ".py", ".md", ".json", ".yml", ".yaml", ".txt", ".ps1",
     ".js", ".html", ".css", ".svg", ".webmanifest",
 }
-EXCLUDED_PARTS = {".git", ".sad_sandbox", "local_data", "__pycache__"}
+EXCLUDED_PARTS = {".git", ".sad_sandbox", ".sad_dev", "local_data", "__pycache__"}
 EXCLUDED_NAMES = {
     "accounts.json",
     "chat_history.json",

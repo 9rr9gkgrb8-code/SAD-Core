@@ -29,7 +29,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(findings, [("legacy.py", marker)])
         self.assertTrue(any("retired private-mode markers" in item for item in run_release_gate(self.root)))
 
-    def test_private_runtime_json_is_not_scanned_as_release_source(self):
+    def test_private_runtime_data_is_not_scanned_as_release_source(self):
         self.write_required_paths()
         marker = "adult" + "_mode"
         for name in (
@@ -41,6 +41,9 @@ class ReleaseGateTests(unittest.TestCase):
             "student_progress.json",
         ):
             (self.root / name).write_text(f'{{"private_note":"{marker}"}}\n', encoding="utf-8")
+        dev = self.root / ".sad_dev" / "workspace" / "private.json"
+        dev.parent.mkdir(parents=True)
+        dev.write_text(f'{{"private_note":"{marker}"}}\n', encoding="utf-8")
         self.assertEqual(find_retired_markers(self.root), [])
         self.assertEqual(run_release_gate(self.root), [])
 

@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 failures.json
 .sad_sandbox/
+.sad_dev/
 settings.json
 local_data/
 .env

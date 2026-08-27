@@ -22,6 +22,7 @@ jobs:
         run: |
           node --check web/app.js
           node --check web/chat.js
+          node --check web/developer_workspace.js
           node --check web/mobile.js
           node --check web/owner_dashboard.js
           node --check web/sw.js
