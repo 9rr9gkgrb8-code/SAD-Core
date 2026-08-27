@@ -195,3 +195,21 @@ def report_failure(exact_failure, user_correction):
     record = create_failure_record(exact_failure, user_correction)
     save_failure_record(record)
     return record
+
+
+def normalize_failure_record(record, source="sad"):
+    """Adapt a legacy SAD failure record to the shared dashboard contract."""
+    from failure_dashboard import FailureEvent
+
+    return FailureEvent(
+        source=source,
+        category=record.get("repair_category") or categorize_failure(record["exact_failure"]),
+        summary=record["exact_failure"],
+        evidence=[{
+            "failure_id": record.get("failure_id"),
+            "timestamp": record.get("timestamp"),
+            "user_correction": record.get("user_correction", ""),
+            "diagnosis": record.get("sad_diagnosis", ""),
+        }],
+        suggested_correction=record.get("suggested_correction", "Review the failure evidence."),
+    )

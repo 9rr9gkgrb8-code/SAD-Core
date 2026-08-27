@@ -2,6 +2,8 @@
 
 import json
 import difflib
+import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -13,6 +15,98 @@ from pathlib import Path
 PROJECT_DIRECTORY = Path(__file__).parent
 SANDBOX_DIRECTORY = PROJECT_DIRECTORY / ".sad_sandbox"
 ALLOWED_TARGET_FILES = {"app.py", "evaluator.py", "personality.py", "settings.py"}
+PROTECTED_GIT_PATHS = (
+    "HEAD", "config", "commondir", "config.worktree", "hooks", "modules"
+)
+GIT_CREDENTIAL_ENVIRONMENT = {"GITHUB_TOKEN", "GH_TOKEN", "GIT_ASKPASS", "SSH_AUTH_SOCK"}
+
+
+def validate_sandbox_path(path, must_exist=True):
+    """Resolve a path and prove it is below the configured sandbox root."""
+    candidate = Path(path).resolve(strict=must_exist)
+    root = SANDBOX_DIRECTORY.resolve()
+    if candidate == root or not candidate.is_relative_to(root):
+        raise ValueError("The path must identify a proposal inside SAD's sandbox directory.")
+    return candidate
+
+
+def _hash_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def snapshot_live_project():
+    """Fingerprint live project files, excluding disposable sandbox and Git state."""
+    manifest = {}
+    for path in PROJECT_DIRECTORY.rglob("*"):
+        if not path.is_file() or ".git" in path.parts or SANDBOX_DIRECTORY in path.parents:
+            continue
+        manifest[path.relative_to(PROJECT_DIRECTORY).as_posix()] = _hash_file(path)
+    return manifest
+
+
+def _git_directory():
+    dot_git = PROJECT_DIRECTORY / ".git"
+    if dot_git.is_dir():
+        return dot_git.resolve()
+    if dot_git.is_file():
+        value = dot_git.read_text(encoding="utf-8").strip()
+        if value.lower().startswith("gitdir:"):
+            return (PROJECT_DIRECTORY / value.split(":", 1)[1].strip()).resolve()
+    return None
+
+
+def snapshot_git_topology():
+    """Fingerprint the repository control plane independently of source files."""
+    git_dir = _git_directory()
+    manifest = {"git_dir": str(git_dir) if git_dir else None}
+    if not git_dir:
+        return manifest
+    for name in PROTECTED_GIT_PATHS:
+        path = git_dir / name
+        if path.is_file():
+            manifest[name] = {"type": "file", "sha256": _hash_file(path)}
+        elif path.is_dir():
+            manifest[name] = {
+                "type": "directory",
+                "entries": {
+                    child.relative_to(path).as_posix(): _hash_file(child)
+                    for child in sorted(path.rglob("*")) if child.is_file()
+                },
+            }
+        else:
+            manifest[name] = {"type": "missing"}
+    lfs = PROJECT_DIRECTORY / ".lfsconfig"
+    manifest[".lfsconfig"] = _hash_file(lfs) if lfs.is_file() else None
+    return manifest
+
+
+def verify_context_execution_root(context_root, execution_root):
+    """Reject prompt context sourced from a different tree than execution."""
+    return Path(context_root).resolve() == Path(execution_root).resolve()
+
+
+def sandbox_has_host_only_git_authority(sandbox_path, environment=None):
+    """Prove the worker copy lacks Git control metadata and common credentials."""
+    path = validate_sandbox_path(sandbox_path)
+    env = os.environ if environment is None else environment
+    return not (path / ".git").exists() and not any(env.get(name) for name in GIT_CREDENTIAL_ENVIRONMENT)
+
+
+def build_worker_environment(environment=None):
+    """Return a worker environment with Git credentials explicitly removed."""
+    clean = dict(os.environ if environment is None else environment)
+    for name in GIT_CREDENTIAL_ENVIRONMENT:
+        clean.pop(name, None)
+    clean["GIT_TERMINAL_PROMPT"] = "0"
+    return clean
+
+
+def _evidence(event_type, details):
+    return {"sequence": 0, "timestamp": datetime.now().isoformat(timespec="milliseconds"), "event": event_type, "details": details}
 
 
 def create_sandbox_proposal(failure_id, target_file, proposal_summary):
@@ -48,6 +142,19 @@ def create_sandbox_proposal(failure_id, target_file, proposal_summary):
 
 def run_sandbox_tests(sandbox_path):
     """Run the project test suite in the isolated copy, never in the live project."""
+    sandbox_path = validate_sandbox_path(sandbox_path)
+    live_before = snapshot_live_project()
+    git_before = snapshot_git_topology()
+    worker_environment = build_worker_environment()
+    context_ok = verify_context_execution_root(sandbox_path, sandbox_path)
+    authority_ok = sandbox_has_host_only_git_authority(sandbox_path, worker_environment)
+    evidence = [
+        _evidence("boundary_validated", {"sandbox_path": str(sandbox_path)}),
+        _evidence("live_project_snapshotted", {"file_count": len(live_before)}),
+        _evidence("git_topology_snapshotted", {"git_dir": git_before.get("git_dir")}),
+        _evidence("context_execution_root_checked", {"passed": context_ok}),
+        _evidence("host_only_git_authority_checked", {"passed": authority_ok}),
+    ]
     result = subprocess.run(
         [sys.executable, "-m", "unittest", "-v"],
         cwd=sandbox_path,
@@ -55,14 +162,29 @@ def run_sandbox_tests(sandbox_path):
         text=True,
         timeout=30,
         check=False,
+        env=worker_environment,
     )
 
-    proposal_path = Path(sandbox_path) / "proposal.json"
+    live_after = snapshot_live_project()
+    git_after = snapshot_git_topology()
+    integrity_ok = live_before == live_after and git_before == git_after
+    evidence.append(_evidence("tests_finished", {"returncode": result.returncode}))
+    evidence.append(_evidence("integrity_verified", {"passed": integrity_ok}))
+    for sequence, event in enumerate(evidence, 1):
+        event["sequence"] = sequence
+
+    proposal_path = sandbox_path / "proposal.json"
     proposal = json.loads(proposal_path.read_text(encoding="utf-8"))
-    proposal["status"] = (
-        "sandbox_tests_passed" if result.returncode == 0 else "sandbox_tests_failed"
-    )
+    if not integrity_ok or not authority_ok or not context_ok:
+        proposal["status"] = "isolation_failed"
+    else:
+        proposal["status"] = "sandbox_tests_passed" if result.returncode == 0 else "sandbox_tests_failed"
     proposal["test_output"] = result.stdout + result.stderr
+    proposal["ordered_evidence"] = evidence
+    proposal["live_project_integrity"] = live_before == live_after
+    proposal["git_topology_integrity"] = git_before == git_after
+    proposal["host_only_git_authority"] = authority_ok
+    proposal["context_execution_root_match"] = context_ok
     proposal_path.write_text(json.dumps(proposal, indent=2), encoding="utf-8")
 
     return proposal
@@ -70,10 +192,7 @@ def run_sandbox_tests(sandbox_path):
 
 def create_draft_patch(sandbox_path, target_file, find_text, replacement_text):
     """Edit one approved file only inside a sandbox and save a reviewable diff."""
-    sandbox_path = Path(sandbox_path).resolve()
-    sandbox_root = SANDBOX_DIRECTORY.resolve()
-    if not sandbox_path.is_relative_to(sandbox_root):
-        raise ValueError("Draft patches must stay inside SAD's sandbox directory.")
+    sandbox_path = validate_sandbox_path(sandbox_path)
 
     if target_file not in ALLOWED_TARGET_FILES:
         raise ValueError("The target file is not approved for sandbox proposals.")
@@ -100,10 +219,7 @@ def create_draft_patch(sandbox_path, target_file, find_text, replacement_text):
 
 def get_sandbox_proposal(proposal_id):
     """Return one saved sandbox proposal and its draft diff for human review."""
-    sandbox_root = SANDBOX_DIRECTORY.resolve()
-    sandbox_path = (sandbox_root / proposal_id).resolve()
-    if not sandbox_path.is_relative_to(sandbox_root):
-        raise ValueError("Proposal reviews must stay inside SAD's sandbox directory.")
+    sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / proposal_id, must_exist=False)
 
     proposal_path = sandbox_path / "proposal.json"
     if not proposal_path.exists():

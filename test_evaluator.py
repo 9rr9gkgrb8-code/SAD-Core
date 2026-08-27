@@ -17,6 +17,16 @@ class EvaluatorTests(unittest.TestCase):
         evaluator.FAILURES_FILE = self.original_failures_file
         self.temp_directory.cleanup()
 
+    def test_legacy_failure_normalizes_for_dashboard(self):
+        record = {
+            "failure_id": "failure-1", "timestamp": "now", "exact_failure": "wrong answer",
+            "user_correction": "correct", "sad_diagnosis": "mismatch",
+            "suggested_correction": "review", "repair_category": "conversation_quality",
+        }
+        event = evaluator.normalize_failure_record(record)
+        self.assertEqual(event.source, "sad")
+        self.assertEqual(event.evidence[0]["failure_id"], "failure-1")
+
     def test_report_can_be_approved_by_a_human(self):
         record = evaluator.report_failure(
             "SAD gave an incorrect answer.",
