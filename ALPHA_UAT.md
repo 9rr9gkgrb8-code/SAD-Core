@@ -13,16 +13,17 @@ Before a pilot session:
 1. Run `python alpha_doctor.py` and require `ALPHA CORE: READY`.
 2. Run the repository CI/release gate on the exact candidate commit.
 3. Use a disposable or backed-up local data set for the first pilot.
-4. Confirm the server binds only to loopback.
+4. Confirm the core SAD server binds only to loopback.
 5. If repair execution will be tested, require `REPAIR ISOLATION: READY` first.
-6. Create separate test accounts for each role. Do not share credentials between
-   testers.
+6. Create separate test accounts for each role. Do not share credentials between testers.
+7. If Mobile Preview will be claimed, run `python mobile_doctor.py` on the actual host
+   configuration and require `MOBILE GATEWAY: READY` before phone testing.
 
 ## Severity and stop rules
 
-- **Critical:** privilege escape, credential exposure, remote binding, unapproved
-  repair execution, local-data loss, or cross-account private-data exposure. Stop
-  the pilot immediately.
+- **Critical:** privilege escape, credential exposure, unintended public/wildcard
+  binding, unapproved repair execution, local-data loss, or cross-account private-data
+  exposure. Stop the pilot immediately.
 - **High:** a core role cannot complete its primary workflow, security controls fail
   closed incorrectly, or accessibility prevents keyboard/screen-reader completion.
   Alpha release is blocked.
@@ -37,23 +38,19 @@ for every accepted Medium finding.
 
 - Complete first-time owner setup and sign in again after restart.
 - Create student, teacher, developer, reviewer, and viewer accounts.
-- Confirm the owner account cannot be accidentally disabled through normal account
-  controls.
+- Confirm the owner account cannot be accidentally disabled through normal account controls.
 - Open the shared Failure Inbox and verify detection alone does not start development.
 - Review a failure, explicitly push it, approve isolated work, inspect evidence,
   approve or reject the result, and close the workflow.
-- Confirm every authority-changing action requires the expected human role and
-  explicit action.
+- Confirm every authority-changing action requires the expected human role and explicit action.
 - Change the owner password and confirm other sessions are revoked.
 
 ## Student acceptance
 
 - Sign in with a student credential and confirm owner/development controls are absent.
 - Use Personal Study for explanation, method teaching, walkthrough, work checking,
-  hints, proofreading, essay editing, rubric review, an example, and word-count
-  expansion.
-- Confirm graded-work handling follows the selected request rather than forcing a
-  quiz loop.
+  hints, proofreading, essay editing, rubric review, an example, and word-count expansion.
+- Confirm graded-work handling follows the selected request rather than forcing a quiz loop.
 - Create a Forge quest from homework, request progressive hints, complete a boss
   check, and verify XP is awarded only after mastery conditions are met.
 - Reload/restart and verify durable student progress is preserved.
@@ -63,25 +60,20 @@ for every accepted Medium finding.
 
 - Sign in with a teacher credential and confirm development/owner controls are absent.
 - View the student roster and each available progress summary.
-- Confirm a teacher can create an allowed student account but cannot create a
-  privileged development account.
+- Confirm a teacher can create an allowed student account but cannot create a privileged development account.
 - Verify one student's progress cannot be mistaken for another student's record.
 
 ## Developer acceptance
 
-- Confirm the developer sees the shared development dashboard but not owner account
-  administration.
-- Confirm the developer cannot perform owner-only push, final governance, or account
-  authority actions.
-- Where permitted, execute only work that already has the required owner isolation
-  approval.
+- Confirm the developer sees the shared development dashboard but not owner account administration.
+- Confirm the developer cannot perform owner-only push, final governance, or account authority actions.
+- Where permitted, execute only work that already has the required owner isolation approval.
 - Confirm Forge evidence does not grant merge, credential, or approval authority.
 
 ## Reviewer acceptance
 
 - Confirm the reviewer can inspect/review the appropriate failure and result states.
-- Confirm the reviewer cannot create privileged accounts or bypass owner push and
-  isolation-approval boundaries.
+- Confirm the reviewer cannot create privileged accounts or bypass owner push and isolation-approval boundaries.
 - Verify approve/reject decisions are recorded and visible after restart.
 
 ## Viewer acceptance
@@ -90,38 +82,81 @@ for every accepted Medium finding.
 - Attempt each available mutation path and require denial.
 - Confirm no student-private or account-secret material appears in the viewer surface.
 
+## Mobile Preview acceptance
+
+Run this section on every phone/browser combination that will be claimed as supported.
+
+### Host and TLS
+
+- Run `python mobile_doctor.py` and require `MOBILE GATEWAY: READY`.
+- Confirm the normal desktop/core endpoint remains on `127.0.0.1`.
+- Confirm the mobile gateway binds only to the configured explicit private/approved
+  overlay IPv4 address, never `0.0.0.0` or a public address.
+- Confirm the phone trusts the HTTPS certificate and receives no certificate warning.
+- Confirm the router is not forwarding the mobile gateway to the public internet.
+
+### Pairing and device trust
+
+- Open the phone URL before pairing and confirm account login is not available until
+  the phone is paired.
+- From the local Owner Mobile Access screen, create a `learning` pairing code.
+- Confirm the 8-digit code expires after five minutes and cannot be reused.
+- Enter repeated bad codes and confirm the gateway throttles excessive pairing attempts.
+- Pair successfully and confirm the phone then requires a normal SAD account login.
+- Revoke the phone from Owner Mobile Access and require the phone to return to the pairing gate.
+- Use **Forget this paired phone** and verify local device trust is removed.
+
+### Learning-mode phone
+
+- Pair the phone in `learning` mode and sign in as Student.
+- Complete Personal Study and Forge quest/hint/mastery/progress workflows.
+- Attempt dashboard, account, teacher-roster, mobile-admin, failure, and repair routes;
+  require denial at the gateway even if a higher-authority account token is supplied.
+
+### Full-role phone
+
+- Pair a trusted phone in `full_role` mode.
+- Sign in separately as Student, Teacher, Reviewer, Developer, Viewer, and Owner where practical.
+- Confirm every role has the same authority it has on desktop, no more and no less.
+- Specifically confirm a Student on a full-role paired phone still cannot reach Owner controls.
+- Confirm Owner repair approval still requires the same Forge evidence and repair-state boundaries.
+
+### PWA / install behavior
+
+- On iPhone/iPad Safari, add SAD Forge to the home screen and launch it standalone.
+- On Android, use the browser install/add-to-home-screen flow and launch standalone.
+- Confirm safe-area padding prevents controls from hiding under notches/home indicators.
+- Confirm all primary touch controls have comfortable tap targets and forms do not trigger unwanted zoom.
+- Toggle phone connectivity and confirm the UI reports offline status.
+- Confirm an offline shell may open but private/API functionality fails safely until the host is reachable.
+- Confirm no prior study output, account data, student record, repair evidence, session token,
+  pairing code, or device credential is available from the service-worker cache.
+
 ## Security acceptance
 
-- Attempt a non-loopback bind and require refusal.
-- Attempt local-model configuration with a non-loopback or credentialed URL and
-  require refusal.
+- Attempt a non-loopback bind on the **core API** and require refusal.
+- Attempt wildcard/public binding on the **mobile gateway** and require refusal.
+- Attempt mobile startup without TLS certificate/key material and require refusal.
+- Attempt local-model configuration with a non-loopback or credentialed URL and require refusal.
 - Verify repeated incorrect passwords trigger temporary lockout.
-- Verify logout invalidates the active session.
-- Verify password change revokes other sessions.
-- Attempt repair execution without ready isolation and require a fail-closed result
-  with no same-user fallback.
-- Confirm repair containers, when enabled, have no network and use the exact reviewed
-  digest-pinned image.
-- Confirm release-integrity checks reject retired private-mode implementation residue
-  in the current release tree.
+- Verify logout invalidates the active account session.
+- Verify password change revokes other account sessions.
+- Attempt repair execution without ready isolation and require a fail-closed result with no same-user fallback.
+- Confirm repair containers, when enabled, have no network and use the exact reviewed digest-pinned image.
+- Confirm release-integrity checks reject retired private-mode implementation residue in the current release tree.
 
 ## Accessibility acceptance
 
 Perform the following on login and every role-visible view:
 
-- Complete the primary workflow using keyboard only. Focus must always be visible and
-  navigation order must remain logical.
-- Confirm view changes move focus to the new view heading and expose the selected
-  navigation item as current.
-- With a screen reader, confirm login errors are announced immediately and normal
-  status updates/generated outputs are announced without stealing control.
+- Complete the primary workflow using keyboard only. Focus must always be visible and navigation order must remain logical.
+- Confirm view changes move focus to the new view heading and expose the selected navigation item as current.
+- With a screen reader, confirm login errors are announced immediately and normal status updates/generated outputs are announced without stealing control.
 - Confirm every input, select, and textarea has an understandable accessible label.
 - Confirm data tables announce a meaningful caption and column headers.
-- Test at 200% browser zoom and at a narrow mobile-sized viewport without losing a
-  required control or forcing two-dimensional scrolling for ordinary forms.
+- Test at 200% browser zoom and at a narrow mobile-sized viewport without losing a required control or forcing two-dimensional scrolling for ordinary forms.
 - Confirm meaning is not communicated by color alone.
-- Confirm error text identifies what needs correction rather than relying only on a
-  red visual state.
+- Confirm error text identifies what needs correction rather than relying only on a red visual state.
 
 ## Pilot record
 
@@ -130,6 +165,8 @@ For each scenario record:
 - candidate commit SHA
 - tester role
 - operating system and browser
+- phone model when Mobile Preview is tested
+- paired-device mode when Mobile Preview is tested
 - pass/fail
 - finding severity
 - reproduction steps
@@ -141,10 +178,13 @@ For each scenario record:
 A candidate may be called **Alpha-ready for a controlled local pilot** when:
 
 - CI, full tests, release integrity, and operator preflight are green;
-- every role boundary above passes;
+- every required desktop role boundary above passes;
 - the accessibility acceptance pass has no blocking finding;
 - no Critical or High UAT finding remains open; and
-- any repair workflow being claimed as ready has been demonstrated with the real
-  reviewed Docker image on the target machine.
+- any repair workflow being claimed as ready has been demonstrated with the real reviewed Docker image on the target machine.
 
-Internet deployment remains outside the Alpha boundary.
+The **Mobile Preview** may be called ready on a particular host/phone combination only
+when its mobile preflight and Mobile Preview acceptance section also pass. A blocked or
+disabled mobile preview does not make the base loopback Alpha remotely accessible.
+
+Public internet deployment remains outside the Alpha boundary.
