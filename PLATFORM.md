@@ -1,25 +1,30 @@
 # SAD Platform Core
 
-SAD Platform Core turns SAD's working product surfaces into one discoverable,
-role-governed local AI platform. Chat, Personal Study, Forge, repair governance,
-Developer Workspace, accounts, Mobile, Voice, and local app integrations share one
-platform contract rather than inventing separate authority systems.
+SAD is a local-first, role-governed AI platform. Chat, Voice, Personal Study, Forge,
+Memory, governed Tools, Developer Workspace, repair governance, accounts, Mobile, and
+local app integrations share one API and authority model.
 
-## Platform objective
+## Current contract
 
-A SAD client should be able to discover what it can use, verify that the capability
-version it expects is available, and then call the specific governed endpoint. Client
-metadata never replaces the server-side security check.
+- Platform version: `0.3-alpha`
+- Platform manifest schema: `3`
+- API contract: `v1`
+- Core API binding: loopback only
+- Dynamic extension execution: disabled
+- AI Git authority: none
+- Git publication authority: human/host only
 
-Human discovery endpoints:
+The established public `GET /health` response remains the minimal
+`{status, api_version}` contract. Detailed discovery requires a signed-in account.
 
-- `GET /health` — established public minimal `{status, api_version}` contract
-- `GET /v1/platform` — signed-in role-filtered platform manifest
-- `GET /v1/platform/modules` — signed-in visible modules/capabilities
-- `GET /v1/platform/capabilities` — signed-in flattened capability catalog
-- `POST /v1/platform/compatibility` — role-filtered version compatibility check
+Human platform discovery:
 
-Owner platform-management endpoints:
+- `GET /v1/platform`
+- `GET /v1/platform/modules`
+- `GET /v1/platform/capabilities`
+- `POST /v1/platform/compatibility`
+
+Owner local-app/event management:
 
 - `GET /v1/platform/clients`
 - `POST /v1/platform/clients`
@@ -27,229 +32,158 @@ Owner platform-management endpoints:
 - `POST /v1/platform/clients/{client_id}/revoke`
 - `POST /v1/platform/events/read`
 
-Machine-client endpoints are documented in `PLATFORM_SDK.md`.
-
-## Platform version
-
-Current Platform Core version: `0.2-alpha`
-
-Platform manifest schema version: `2`
-
-The API remains `v1`. Platform and API versions remain separate so SAD can evolve
-module discovery and compatibility metadata without silently changing an established
-route contract.
-
-Every capability now includes:
-
-- `capability_version` using numeric `major.minor.patch`
-- `lifecycle`: `alpha`, `stable`, or `deprecated`
-- optional `replacement`
-- routes
-- permission requirement
-- state-mutation marker
-- human-approval-boundary marker
-
-Compatibility checks are filtered to the requesting principal. A hidden capability is
-reported unavailable rather than leaked through the negotiation endpoint.
+Machine-client usage is documented in `PLATFORM_SDK.md`. `SAD-App` credentials remain
+read-only/control-plane credentials and cannot impersonate a person or enter Chat,
+Memory, Tools, Study, Forge, coding, repair, account, mobile-admin, or Git workflows.
 
 ## Built-in modules
 
 ### `sad.platform`
 
-Platform discovery, module/catalog metadata, version negotiation, Owner-governed local
-app credentials, and metadata-only event inspection.
+Versioned discovery, compatibility negotiation, Owner-governed loopback app
+credentials, and metadata-only platform events.
 
 ### `sad.chat`
 
-General free-form multi-turn SAD conversation with durable per-account history.
+Private per-account multi-turn conversation. Chat can optionally use enabled,
+non-expired Personal Memory when the configured Local AI model is active. A request can
+set `use_memory: false` to exclude saved memory for that turn.
 
 ### `sad.voice`
 
-A signed-in transcript bridge into the same account-owned SAD conversation engine.
-It returns reply text suitable for a later local TTS client. Browser microphone capture,
-STT, and TTS engines are not bundled in this milestone.
+Authenticated transcript-to-conversation bridge. It shares SAD Chat history and the
+same optional Personal Memory context. The response contains text suitable for a local
+TTS layer. Microphone capture, STT, and TTS engines are deployment/client work rather
+than hidden server authority.
+
+### `sad.memory`
+
+Explicit user-controlled long-term memory. SAD does not automatically promote ordinary
+chat text into this store.
+
+Supported memory categories:
+
+- `fact`
+- `preference`
+- `goal`
+- `project`
+- `note`
+
+Memory controls:
+
+- create
+- list/search
+- edit
+- enable/disable for Local AI context
+- optional expiry
+- delete
+
+Every memory belongs to exactly one account. Disabled or expired memories are not
+provided to Local AI context. The built-in dialogue fallback never reports memory use.
+Runtime memory lives in ignored `memory.json`.
+
+Memory endpoints:
+
+- `GET /v1/memory`
+- `POST /v1/memory`
+- `POST /v1/memory/search`
+- `POST /v1/memory/{memory_id}`
+- `POST /v1/memory/{memory_id}/delete`
+
+### `sad.tools`
+
+Governed internal Tool Actions. Tool definitions are fixed reviewed Python call paths,
+not dynamically loaded plugins.
+
+Tier 3 built-in tools:
+
+- `platform.status` — read platform status
+- `memory.search` — search the signed-in account's memories
+- `memory.remember` — save an explicit personal memory
+- `memory.forget` — delete an owned memory
+
+Read-only actions can enter `ready`. State-changing tools enter `awaiting_approval` and
+cannot execute until the same signed-in account explicitly approves them. Rejected
+actions cannot execute.
+
+There is no generic shell, arbitrary URL/network request, dynamic Python/plugin
+execution, package install, unrestricted filesystem action, or Git tool in this tier.
+Tool-action runtime state lives in ignored `tool_actions.json`.
+
+Tool endpoints:
+
+- `GET /v1/tools`
+- `GET /v1/tools/actions`
+- `POST /v1/tools/actions`
+- `GET /v1/tools/actions/{action_id}`
+- `POST /v1/tools/actions/{action_id}/decision`
+- `POST /v1/tools/actions/{action_id}/execute`
 
 ### `sad.study`
 
-Personal Study actions including explanation, method teaching, walkthroughs, work
-checking, proofreading, essay help, rubric review, examples, and expansion.
+Request-directed explanation, method teaching, work checking, proofreading, essay and
+rubric help, examples, and expansion through the existing Personal Study contract.
 
 ### `sad.forge`
 
-Forge learning game features: quests, hints, mastery, XP, rank, companion state, and
+Game-first learning: quests, hints, mastery checks, XP, ranks, companion progress, and
 student progress.
 
 ### `sad.developer`
 
-Failure/development visibility, isolated Developer Workspace coding, repair review,
-human decisions, Owner live apply, and rollback.
+Human-scoped multi-file coding and failure-driven repair. Generation occurs only in
+private workspaces; Docker verification must pass; live application remains governed by
+the existing Owner boundary. No coding or repair agent receives Git authority.
 
 ### `sad.accounts`
 
-Account lifecycle and Owner-controlled mobile-device trust administration.
+Local accounts, roles, passwords, lifecycle controls, and Owner-managed mobile device
+trust.
 
 ### `sad.mobile`
 
-Paired TLS gateway/client surface. The core SAD API remains loopback-only.
-
-## Principal model
-
-SAD now distinguishes three trust principals.
-
-### Human account
-
-A person signs in with a local SAD account and receives an expiring in-memory Bearer
-session. Existing role permissions determine which concrete endpoints that person may
-use.
-
-### Local app
-
-An Owner can create a loopback-only `SAD-App` credential with explicitly selected
-machine scopes and event subscriptions. The secret is returned once, salted/hashed at
-rest, rotatable, and revocable.
-
-Tier 2 app credentials are intentionally read-only/control-plane credentials. They can
-only receive approved platform discovery, compatibility, and event metadata. They
-cannot impersonate a SAD account or enter Chat, Study, Forge, coding, repair, account,
-mobile-administration, or Git workflows.
-
-### AI component
-
-An AI model receives no identity merely because it generated text, a repair proposal,
-or code. AI output must still pass the existing explicit human and isolation boundaries.
-
-## Event stream
-
-SAD emits a bounded local event stream for integrations that need to know that
-something happened without receiving the private payload itself.
-
-Events include a sequence, event ID, type, timestamp, optional subject ID, and a small
-bounded metadata object. They deliberately exclude conversation text, generated code,
-diffs, passwords, session tokens, app secrets, student work, and other high-value data.
-
-App event reads are intersected with the exact event types approved by Owner. An empty
-event subscription returns no events.
-
-Runtime event data lives in Git-ignored `platform_events.json`.
-
-## Voice client contract
-
-`POST /v1/voice/turn` accepts an authenticated user's transcript and optional existing
-chat session ID. It uses the same SAD conversation engine and account ownership rules as
-SAD Chat, then returns:
-
-- conversation `session_id`
-- `reply`
-- `speech_text`
-- response `engine`
-- `input_mode: transcript`
-- `output_mode: text_for_local_tts`
-
-The endpoint does not grant tool, code, repair, approval, app-management, or Git
-authority. It is a conversation transport contract.
-
-Learning-mode phones may call the voice route after pairing and normal user login.
-Machine-client `/v1/platform/client/*` endpoints are blocked by the mobile gateway even
-for full-role paired devices, keeping app credentials loopback-only.
-
-## Python SDK
-
-`sad_sdk.py` provides a small standard-library-only synchronous client for loopback SAD
-integrations. It supports normal user-session platform/compatibility/voice calls and
-scoped app manifest/compatibility/event calls. It does not persist credentials and
-refuses non-loopback core URLs.
-
-See `PLATFORM_SDK.md` for examples and the app trust contract.
-
-## Role-filtered discovery
-
-The registry still uses the same role-permission map as the live API.
-
-Examples:
-
-- Student: discovery, compatibility, SAD Chat, Voice bridge, Personal Study, Forge play,
-  own progress.
-- Teacher: Student capabilities plus student progress and allowed student-account work.
-- Viewer: discovery/compatibility plus read-only development visibility.
-- Reviewer: discovery/compatibility plus authorized development review/decision.
-- Developer: discovery/compatibility plus development work, but no Owner governance.
-- Owner: all role-permitted Alpha modules plus local-app/event management.
-
-The platform catalog does not invent a second human permission system.
-
-## Extension boundary
-
-Platform Core remains **declarative, not a dynamic plugin loader**.
-
-Tier 2 creates an integration SDK and machine credentials, but registering a local app
-still cannot cause arbitrary Python, JavaScript, shell commands, packages, or extension
-code to execute. There is no extension marketplace, remote package installation, OAuth,
-or public-internet app token surface.
-
-A future dynamic extension/plugin system requires a separate reviewed execution
-boundary. It must not be smuggled in through the app registry.
+Separate paired TLS gateway for phone access while the normal core API remains
+loopback-only. Pairing trusts a device; normal login authorizes a person.
 
 ## Authority model
 
-Platform manifests explicitly state that:
+Platform metadata is descriptive only. A capability appearing in a manifest never
+bypasses concrete route authorization.
 
-- platform metadata does not grant authority;
-- human authorization is role based;
-- machine authorization is scope based;
-- machine credentials do not impersonate users;
-- dynamic extension execution is disabled;
-- Git authority remains human-host controlled.
+Human accounts use the existing role-permission map. Local apps use separately scoped
+`SAD-App` credentials. AI output receives neither identity automatically.
 
-No Platform Tier 2 feature can:
+The Platform manifest explicitly reports:
 
-- elevate an account;
-- approve or apply a repair;
-- run or apply Developer Workspace code as a machine client;
-- bypass Docker isolation;
-- expose private runtime payloads through events;
-- turn an app secret into a user session;
-- commit, push, merge, fetch, rebase, or alter Git;
-- dynamically load arbitrary extension code.
+- `platform_metadata_grants_authority: false`
+- `dynamic_extension_execution: false`
+- `tool_execution: registered_internal_tools_only`
+- `memory_model: explicit_user_controlled`
+- `git_authority: human_host_only`
 
-## Mobile
+## Platform events
 
-The Platform dashboard remains available to trusted full-role development accounts,
-and Owner now gets explicit local-app/event controls. API responses and one-time app
-secrets are not service-worker cached because every `/v1/*` response remains excluded.
+Events are bounded metadata notifications. Tier 3 adds memory and tool lifecycle event
+types, but event payloads must not contain memory content/title, tool arguments/output,
+conversation text, generated code/diffs, passwords, sessions, or app secrets.
 
-Learning-mode phones keep their smaller route allow-list plus `/v1/voice/turn`.
-They do not gain Platform admin or machine-client routes.
+## Mobile Tier 3
 
-## Security and privacy
+A paired `learning` phone may use its signed-in account's Chat, Voice, Memory, governed
+personal Tools, Personal Study, Forge play, and own progress through explicit route
+matching. Development/admin routes remain blocked. `SAD-App` machine endpoints remain
+blocked through the mobile gateway even on `full_role` phones so machine credentials
+stay loopback-only.
 
-- `/health` keeps the established minimal response.
-- Detailed human platform metadata requires a valid user session.
-- App management requires Owner-only `platform:manage`.
-- App secrets are shown only at creation/rotation and stored only as salted hashes.
-- `platform_clients.json` and `platform_events.json` are private Git-ignored runtime data.
-- Event payloads are bounded and privacy-minimized.
-- Machine endpoints remain on the loopback core API only.
-- No Tier 2 route changes the core server's loopback binding.
+The PWA may cache Memory & Tools static JS/CSS but never caches `/v1/*` or `/mobile/*`
+responses.
 
-## What Tier 2 changes
+## Acceptance
 
-Platform Core v0.1 made SAD discoverable as one platform.
+Automated gates cover ownership, expiry/disable behavior, per-turn memory exclusion,
+mutating-tool approval, unknown-tool rejection, mobile route isolation, event privacy,
+PWA cache privacy, browser syntax, release integrity, and Docker isolation.
 
-Platform Core v0.2 makes that platform **integratable** without giving integrations the
-keys to the house: scoped local app identity, exact event subscriptions, compatibility
-negotiation, a loopback SDK, and a voice-client conversation contract.
-
-## Still later
-
-Remaining later-platform work includes:
-
-- a separately sandboxed dynamic extension/plugin execution model, if desired;
-- richer event delivery such as local subscriptions/webhooks without weakening
-  loopback/private-network boundaries;
-- optional browser/native microphone capture;
-- reviewed local speech-to-text and text-to-speech engines;
-- formal capability deprecation windows/migration tooling;
-- deployment-host UAT and eventual Beta packaging.
-
-Those additions must preserve SAD's local-first, least-authority, and human-approval
-boundaries.
+Deployment acceptance is defined in `PLATFORM_TIER3_UAT.md`. Host/device UAT remains
+required before calling Tier 3 operational on a particular deployment computer or
+phone.

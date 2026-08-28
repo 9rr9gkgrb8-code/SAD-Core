@@ -10,8 +10,8 @@ from dataclasses import asdict, dataclass
 from typing import Iterable
 
 
-PLATFORM_VERSION = "0.2-alpha"
-PLATFORM_SCHEMA_VERSION = 2
+PLATFORM_VERSION = "0.3-alpha"
+PLATFORM_SCHEMA_VERSION = 3
 CAPABILITY_LIFECYCLES = {"alpha", "stable", "deprecated"}
 
 
@@ -123,11 +123,11 @@ BUILTIN_MODULES = (
             _cap("platform:events", "Read platform events", "Read privacy-minimized platform event metadata.", "platform:manage",
                  (_route("POST", "/v1/platform/events/read"),)),
         ),
-        module_version="2.0.0",
+        module_version="3.0.0",
     ),
     PlatformModule(
         "sad.chat", "SAD Chat",
-        "General multi-turn local AI conversation with durable per-account history.",
+        "General multi-turn local AI conversation with durable per-account history and optional explicit memory context.",
         "experience",
         (
             _cap("chat:conversation", "Conversation", "Create, continue, read, and archive personal SAD chats.", None,
@@ -139,11 +139,36 @@ BUILTIN_MODULES = (
     ),
     PlatformModule(
         "sad.voice", "Voice Client Bridge",
-        "Signed-in transcript-to-SAD conversation contract for future local speech input/output clients.",
+        "Signed-in transcript-to-SAD conversation contract for local speech input/output clients.",
         "gateway",
         (
             _cap("voice:conversation", "Voice conversation bridge", "Submit a speech transcript and receive SAD reply text for local synthesis.", None,
                  (_route("POST", "/v1/voice/turn"),), mutates=True),
+        ),
+    ),
+    PlatformModule(
+        "sad.memory", "Personal Memory",
+        "Explicit user-controlled long-term memory with per-account isolation, enable/disable, search, expiry, edit, and delete.",
+        "core",
+        (
+            _cap("memory:own", "Manage personal memory", "Create, search, edit, enable, expire, and delete only your own saved memories.", None,
+                 (_route("GET", "/v1/memory"), _route("POST", "/v1/memory"),
+                  _route("POST", "/v1/memory/search"), _route("POST", "/v1/memory/{memory_id}"),
+                  _route("POST", "/v1/memory/{memory_id}/delete")), mutates=True, approval=True),
+        ),
+    ),
+    PlatformModule(
+        "sad.tools", "Governed Tool Actions",
+        "Reviewed internal tools with account ownership and explicit approval before state-changing personal actions.",
+        "core",
+        (
+            _cap("tools:catalog", "Browse tools", "Read the internal tool actions available to the signed-in account.", None,
+                 (_route("GET", "/v1/tools"),)),
+            _cap("tools:actions", "Run governed tools", "Create, inspect, approve/reject, and execute only registered internal tools.", None,
+                 (_route("GET", "/v1/tools/actions"), _route("POST", "/v1/tools/actions"),
+                  _route("GET", "/v1/tools/actions/{action_id}"),
+                  _route("POST", "/v1/tools/actions/{action_id}/decision"),
+                  _route("POST", "/v1/tools/actions/{action_id}/execute")), mutates=True, approval=True),
         ),
     ),
     PlatformModule(
@@ -264,11 +289,7 @@ class PlatformRegistry:
 
     def catalog(self, permissions):
         allowed = self.allowed_capability_ids(permissions)
-        return [
-            capability.to_dict()
-            for capability in self.capabilities.values()
-            if capability.capability_id in allowed
-        ]
+        return [capability.to_dict() for capability in self.capabilities.values() if capability.capability_id in allowed]
 
     def visible_modules(self, permissions):
         allowed = self.allowed_capability_ids(permissions)
@@ -322,6 +343,8 @@ class PlatformRegistry:
                 "authorization": "role_permissions_and_client_scopes",
                 "platform_metadata_grants_authority": False,
                 "dynamic_extension_execution": False,
+                "tool_execution": "registered_internal_tools_only",
+                "memory_model": "explicit_user_controlled",
                 "git_authority": "human_host_only",
             },
         }

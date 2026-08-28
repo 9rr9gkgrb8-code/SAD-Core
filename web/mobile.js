@@ -9,6 +9,7 @@
     chat:{css:"/ui/chat.css",js:"/ui/chat.js"},
     developer_workspace:{css:"/ui/developer_workspace.css",js:"/ui/developer_workspace.js"},
     platform:{css:"/ui/platform.css",js:"/ui/platform.js"},
+    memory_tools:{css:"/ui/memory_tools.css",js:"/ui/memory_tools.js"},
   };
 
   function headers(){return {}}
@@ -95,6 +96,7 @@
   loadSurface("chat");
   loadSurface("developer_workspace");
   loadSurface("platform");
+  loadSurface("memory_tools");
 
   window.SADMobile={remote,headers,ensurePaired,handleApiError,forgetDevice};
 })();

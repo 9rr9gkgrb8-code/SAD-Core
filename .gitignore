@@ -14,3 +14,5 @@ student_progress.json
 chat_history.json
 platform_clients.json
 platform_events.json
+memory.json
+tool_actions.json

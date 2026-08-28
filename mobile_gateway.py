@@ -33,6 +33,12 @@ LEARNING_EXACT_ROUTES = {
     ("GET", "/v1/chat/sessions"),
     ("POST", "/v1/chat/sessions"),
     ("POST", "/v1/voice/turn"),
+    ("GET", "/v1/memory"),
+    ("POST", "/v1/memory"),
+    ("POST", "/v1/memory/search"),
+    ("GET", "/v1/tools"),
+    ("GET", "/v1/tools/actions"),
+    ("POST", "/v1/tools/actions"),
     ("POST", "/v1/study/plan"),
     ("POST", "/v1/forge/quests"),
     ("GET", "/v1/forge/progress"),
@@ -41,6 +47,8 @@ LEARNING_EXACT_ROUTES = {
 }
 CHAT_SESSION_ROUTE = re.compile(r"/v1/chat/sessions/[0-9a-f-]+")
 CHAT_ACTION_ROUTE = re.compile(r"/v1/chat/sessions/[0-9a-f-]+/(messages|archive)")
+MEMORY_ITEM_ROUTE = re.compile(r"/v1/memory/[0-9a-f-]+(?:/delete)?")
+TOOL_ACTION_ROUTE = re.compile(r"/v1/tools/actions/[0-9a-f-]+(?:/(?:decision|execute))?")
 
 
 def _now():
@@ -59,7 +67,7 @@ def mobile_host_allowed(host):
 
 
 def mobile_route_allowed(mode, method, path):
-    """Learning devices get a narrow user route set; machine-client auth stays loopback-only."""
+    """Learning devices get a narrow personal route set; machine-client auth stays loopback-only."""
     if path.startswith("/v1/platform/client/"):
         return False
     if mode == "full_role":
@@ -71,6 +79,10 @@ def mobile_route_allowed(mode, method, path):
     if method == "GET" and CHAT_SESSION_ROUTE.fullmatch(path):
         return True
     if method == "POST" and CHAT_ACTION_ROUTE.fullmatch(path):
+        return True
+    if method == "POST" and MEMORY_ITEM_ROUTE.fullmatch(path):
+        return True
+    if method in {"GET", "POST"} and TOOL_ACTION_ROUTE.fullmatch(path):
         return True
     return False
 
@@ -144,11 +156,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; "
-            "img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'",
-        )
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         if target.name == "sw.js":
@@ -166,10 +174,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
             raise
         self.limiter.succeeded(address)
         raw_token = result.pop("device_token")
-        cookie = (
-            f"{DEVICE_COOKIE}={raw_token}; Path=/; Max-Age={DEVICE_DAYS * 86400}; "
-            "Secure; HttpOnly; SameSite=Strict"
-        )
+        cookie = f"{DEVICE_COOKIE}={raw_token}; Path=/; Max-Age={DEVICE_DAYS * 86400}; Secure; HttpOnly; SameSite=Strict"
         return self._respond(200, result, {"Set-Cookie": cookie})
 
     def _cookie_device_token(self):
@@ -241,8 +246,7 @@ def create_mobile_server(host, port=DEFAULT_MOBILE_PORT, certfile=None, keyfile=
     certificate = _validated_tls_file(certfile, "TLS certificate")
     private_key = _validated_tls_file(keyfile, "TLS private key")
     handler = type(
-        "BoundMobileGatewayHandler",
-        (MobileGatewayHandler,),
+        "BoundMobileGatewayHandler", (MobileGatewayHandler,),
         {"service": service or SadApiService(), "access": access or MobileAccessStore(), "limiter": PairAttemptLimiter()},
     )
     server = ThreadingHTTPServer((host, port), handler)
