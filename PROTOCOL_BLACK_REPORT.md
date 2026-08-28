@@ -84,6 +84,14 @@ Protocol Black assumes hostile unauthenticated callers, compromised paired devic
 
 **Fix:** CI now pins the reviewed Python image digest and pins `actions/checkout` and `actions/setup-python` to exact commit SHAs. Protocol Black tests reject reintroduction of mutable action tags or the mutable Docker tag pull.
 
+### PB-011 — MEDIUM — Thread-per-request listeners had no admission ceiling
+
+**Finding:** Core and Mobile used Python's threaded HTTP server directly. A hostile or malfunctioning local/LAN client could open many slow connections and cause unbounded request-thread growth.
+
+**Impact:** The service could suffer memory/thread exhaustion even though authorization and private-network restrictions still prevented privilege escalation.
+
+**Fix:** Both listeners now use a bounded threaded server with fail-fast admission and a per-connection socket timeout. Core permits at most 64 concurrent request workers; Mobile permits 32. Both apply a 15-second slow-client timeout and retain a bounded listen queue. Protocol Black tests exercise admission exhaustion/recovery and require the bounded listener configuration. This is Alpha availability hardening, not a claim of Internet-scale DDoS resistance.
+
 ## Security controls that resisted the Black pass
 
 The audit revalidated existing boundaries rather than changing them where they already failed closed:
@@ -102,7 +110,7 @@ The audit revalidated existing boundaries rather than changing them where they a
 - PWA service-worker policy excludes `/v1/*` and `/mobile/*` private traffic from caching.
 - Browser CSP and frame-ancestor policy remain restrictive.
 
-## Residual risks requiring deployment UAT
+## Residual risks requiring deployment UAT or repository administration
 
 These are not marked as passed by GitHub CI:
 
@@ -111,9 +119,9 @@ These are not marked as passed by GitHub CI:
 3. Authenticity/trustworthiness of the installed local model runtime and model files.
 4. TLS private-key permissions and phone certificate trust on the real deployment.
 5. Router/LAN segmentation, hostile-device exposure, and assurance that no public port forwarding exists.
-6. Connection-flood/slow-client resilience of the simple Alpha HTTP servers under a hostile LAN. Private-network binding and pairing reduce exposure, but production-grade connection admission/rate limiting should be added before broader network deployment.
-7. Prompt injection remains a model-quality risk. Prompt text is never relied upon as the authorization boundary; server-side RBAC/approval remains authoritative.
-8. Physical/local-OS compromise can bypass application-layer guarantees and is outside SAD's current Alpha threat boundary.
+6. Prompt injection remains a model-quality risk. Prompt text is never relied upon as the authorization boundary; server-side RBAC/approval remains authoritative.
+7. Physical/local-OS compromise can bypass application-layer guarantees and is outside SAD's current Alpha threat boundary.
+8. GitHub `main` should be protected by repository branch protection/rulesets requiring the green PR checks. The current connected GitHub integration can inspect but not write those repository-administration settings, so Protocol Black cannot truthfully mark that control enabled from code.
 
 ## Release rule
 
