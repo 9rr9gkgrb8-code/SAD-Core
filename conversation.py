@@ -181,8 +181,12 @@ class ConversationStore:
             return self._public_session(session)
 
 
-def generate_chat_reply(message, profile, session):
-    """Use the configured local model, with the built-in dialogue layer as fallback."""
+def generate_chat_reply(message, profile, session, memories=None):
+    """Use the configured local model, with the built-in dialogue layer as fallback.
+
+    `memories` contains only explicitly saved, enabled memory strings selected by the
+    caller. Built-in dialogue does not claim to consume this separate memory context.
+    """
     message = _validate_message(message)
     display_name = profile.get("display_name") or ""
     level = profile.get("level", 0)
@@ -190,11 +194,17 @@ def generate_chat_reply(message, profile, session):
         level = 0
 
     messages = session.get("messages", [])
-    history = [
+    recent_history = [
         ("User" if item.get("role") == "user" else "Sasha", item.get("text", ""))
         for item in messages[-12:]
         if item.get("role") in {"user", "assistant"} and isinstance(item.get("text"), str)
     ]
+    memory_history = []
+    if memories:
+        for item in list(memories)[-3:]:
+            if isinstance(item, str) and item.strip():
+                memory_history.append(("Saved memory", item.strip()[:8_000]))
+    history = memory_history + (recent_history[-3:] if memory_history else recent_history)
     local_reply = generate_local_response(message, display_name, history)
     if local_reply:
         return local_reply, "local_model"
