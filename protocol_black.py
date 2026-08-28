@@ -12,6 +12,7 @@ import unittest
 BLACK_TEST_MODULES = (
     "test_protocol_black",
     "test_protocol_black_supply_chain",
+    "test_bounded_http",
     "test_security_surface",
     "test_container_sandbox",
     "test_model_adapter",
