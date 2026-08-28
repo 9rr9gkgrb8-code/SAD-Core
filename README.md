@@ -5,8 +5,8 @@ SAD is a local-first AI platform with human-controlled authority boundaries.
 Current Alpha surfaces include SAD Chat, Voice, explicit Personal Memory, governed Tool
 Actions, Personal Study, Forge Learning, multi-file Developer Workspace coding,
 controlled repair, accounts/RBAC, paired Mobile access, scoped local app credentials,
-platform events, capability/version discovery, transactional Tier 2/3 persistence,
-Windows Encryption Tier 1, and verified encrypted operator backup/recovery.
+platform events, capability/version discovery, transactional protected persistence,
+Windows Encryption Tier 2, and verified native plus portable encrypted recovery.
 
 ## Platform Core v0.3-alpha
 
@@ -18,66 +18,76 @@ Owner approval where required.
 Built-in modules include SAD Platform Core, Chat, Voice, Personal Memory, governed Tools,
 Personal Study, Forge, Developer Workspace, Accounts/Roles, and Mobile.
 
-## Runtime data, SQLite, and Windows at-rest protection
+## Runtime data and Windows at-rest protection
 
-Private application data belongs outside source/control surfaces. Tier 2/3 state uses the
-versioned transactional database:
+Private application state belongs outside source/control surfaces. The live/default
+Windows data layer uses:
 
 ```text
 local_data/sad_runtime.sqlite3
 ```
 
-The SQLite database currently holds default runtime documents for:
+Protected runtime namespaces now include:
 
+- accounts and profiles;
+- Chat history;
+- Forge/student progress;
+- mobile pairing/device trust state;
+- failure records;
+- Owner/Developer dashboard evidence;
+- dialogue settings;
 - Personal Memory;
 - governed Tool Actions;
 - Platform local-app registrations;
-- privacy-minimized Platform events.
+- Platform events.
 
-On the intended Windows deployment path, these document payloads are protected with the
-current Windows user's DPAPI context before they are persisted. Existing plaintext rows
-are transactionally migrated on first protected startup. Once protection is declared,
-plaintext/downgraded rows fail closed.
+On Windows, document payloads are protected with the current Windows user's DPAPI context
+before persistence. Passwords remain salted one-way PBKDF2 verifier material rather than
+becoming decryptable.
 
-Validated legacy JSON copies for those stores are imported only when SQLite has no
-corresponding namespace, verified after import, then moved into
-`local_data/legacy_imported/`. If both live SQLite and legacy JSON appear authoritative,
-startup fails closed instead of guessing.
+Validated legacy state is imported only when the matching SQLite namespace is absent,
+read back for verification, then archived. Protected Windows startup also protects
+legacy-import archives. If both encrypted state and a live legacy copy appear
+authoritative, startup fails closed rather than guessing.
 
-Accounts, Chat history, progress, failures/dashboard state, settings, and mobile pairing
-state remain compatible private stores during this milestone. Until they migrate into the
-protected data layer, use BitLocker/full-disk or deliberate host file encryption for their
-at-rest confidentiality.
+Explicit custom file paths remain available for isolated tests and compatibility/recovery
+tooling. They are not the live/default protected persistence claim.
 
-## Backup and recovery
+## Native and portable backup/recovery
 
-Create an encrypted Windows backup outside the SAD tree:
+For routine recovery under the same Windows protection context:
 
 ```powershell
-python backup.py create D:\SAD-Backups\sad-state.sadbak
-python backup.py verify D:\SAD-Backups\sad-state.sadbak
+python backup.py create D:\SAD-Backups\sad-native.sadbak
+python backup.py verify D:\SAD-Backups\sad-native.sadbak
 ```
 
-Restore only while SAD is stopped and only with explicit approval:
+For disaster recovery across Windows profiles or replacement Windows machines:
 
 ```powershell
-python backup.py restore D:\SAD-Backups\sad-state.sadbak --confirm
+python backup.py portable-create D:\SAD-Backups\sad-portable.sadbak
+python backup.py portable-verify D:\SAD-Backups\sad-portable.sadbak
 ```
 
-The verified ZIP/manifest exists inside a current-user DPAPI-protected container. Backups
-retain per-file SHA-256, use SQLite's online backup API for a consistent database
-snapshot, reject traversal/undeclared/tampered files, verify SQLite integrity, stage
-restore files before replacement, and roll back already-replaced files if restore fails.
+Portable backup passphrases are prompted interactively and are never accepted as command
+arguments or stored by SAD. Portable containers use AES-256-GCM through exactly pinned
+PyCA `cryptography`, with PBKDF2-HMAC-SHA256 passphrase derivation and random salt/nonce.
 
-Legacy plaintext backup ZIPs are rejected by the normal verify/restore path. Convert a
-verified old backup explicitly:
+A portable export does **not** merely wrap a source-user DPAPI database. SAD exports the
+runtime database to a host-neutral representation only in memory inside the encrypted
+container. On portable restore, every runtime document is re-protected with the
+destination Windows user's DPAPI context before staged/live SQLite bytes are written.
+
+Restore remains explicit and offline-oriented:
 
 ```powershell
-python backup.py encrypt-legacy D:\OldBackups\sad-state.zip D:\SAD-Backups\sad-state.sadbak
+python backup.py restore D:\SAD-Backups\sad-native.sadbak --confirm
+python backup.py portable-restore D:\SAD-Backups\sad-portable.sadbak --confirm
 ```
 
-Tier 1 DPAPI backups are tied to their Windows protection context and are not yet a
-portable cross-machine disaster-recovery format. See `BACKUP.md` and `ENCRYPTION.md`.
+Both formats retain manifest/hash/path checks, SQLite integrity verification, staged
+replacement, explicit approval, and rollback on partial restore failure. See `BACKUP.md`,
+`ENCRYPTION.md`, and `ENCRYPTION_TIER2_UAT.md`.
 
 ## Conversation and Voice
 
@@ -149,63 +159,28 @@ private traffic never does. See `MOBILE.md`.
 
 ## Windows readiness
 
-CI runs the full suite, Protocol Black, release gate, and Alpha preflight on:
+CI runs the full suite, Protocol Black, release gate, and Alpha preflight on Ubuntu
+Python 3.11 plus Windows Python 3.11 and 3.12. CI installs the exact pinned portable crypto
+dependency and Windows preflight requires real DPAPI plus protected-runtime readiness.
 
-- Ubuntu 24.04 / Python 3.11;
-- Windows Server 2025 runner / Python 3.11;
-- Windows Server 2025 runner / Python 3.12.
-
-Windows CI additionally exercises real DPAPI protection/decryption, tamper/purpose
-rejection, runtime payload confidentiality/migration/downgrade behavior, and encrypted
-backup/restore.
-
-On the actual Windows deployment host run:
+On the actual Windows deployment host:
 
 ```powershell
+python -m pip install -r requirements.txt
 python windows_doctor.py
 .\start_sad_windows.ps1
 ```
 
-The Windows doctor requires a successful DPAPI probe and active runtime payload
-protection. CI Windows coverage does not substitute for Windows 11/BitLocker/Docker/model/
-TLS/phone/audio human UAT on the real machine. See `WINDOWS.md`.
+CI does not substitute for Windows 11/BitLocker/Docker/model/TLS/phone/audio human UAT or
+for a real cross-profile portable restore drill. See `WINDOWS.md`.
 
-## Private runtime data
+## Encryption boundary
 
-Treat `local_data/`, legacy private JSON names, `.sad_sandbox/`, `.sad_dev/`, `.env`,
-accounts/chat/progress/settings/failure state, app/device credentials, Memory, Tool
-Actions, Platform events, the SQLite runtime database, and backup artifacts as private
-host data. They remain Git-ignored and excluded from coding/release-source surfaces even
-when a subset is application-encrypted.
+BitLocker remains the recommended outer defense against stolen-drive/offline access.
+DPAPI does not protect against malware already executing as the authorized Windows user.
+SAD does not silently enable EFS. `.env` remains live host configuration protected by
+Windows ACLs/BitLocker, although backup containers encrypt it while archived.
 
-## Run and verify
-
-Desktop Alpha:
-
-```powershell
-python alpha.py
-```
-
-Guarded Windows startup:
-
-```powershell
-.\start_sad_windows.ps1
-```
-
-Core verification:
-
-```powershell
-python -m compileall -q .
-python -m unittest -v
-python protocol_black.py
-python release_gate.py
-python alpha_doctor.py
-```
-
-Automatic repair/coding readiness additionally requires the reviewed digest-pinned
-Docker sandbox image and `python docker_proof.py`. Mobile readiness requires
-`mobile_doctor.py` and real host/phone UAT.
-
-See `PLATFORM.md`, `API.md`, `SECURITY.md`, `ALPHA1.md`, `BACKUP.md`, `ENCRYPTION.md`,
-`VOICE.md`, `WINDOWS.md`, `PLATFORM_TIER2_UAT.md`, and `PLATFORM_TIER3_UAT.md` for the
-current contracts.
+Treat `local_data/`, `.sad_sandbox/`, `.sad_dev/`, `.env`, migration archives,
+credentials, the SQLite runtime database, and every backup artifact as private host data.
+Never commit them, even when application encryption is active.
