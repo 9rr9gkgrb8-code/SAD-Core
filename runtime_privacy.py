@@ -23,6 +23,7 @@ PRIVATE_RUNTIME_FILES = frozenset({
     "mobile_access.json",
     "platform_clients.json",
     "platform_events.json",
+    "preferences.json",
     "sad_runtime.sqlite3",
     "settings.json",
     "student_progress.json",
