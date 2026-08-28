@@ -16,6 +16,9 @@ import uuid
 MOBILE_STATE_FILE = Path(__file__).with_name("local_data") / "mobile_access.json"
 PAIRING_MINUTES = 5
 DEVICE_DAYS = 30
+PAIRING_HASH_ITERATIONS = 200_000
+MAX_ACTIVE_PAIRINGS = 10
+MAX_ACTIVE_DEVICES = 50
 MAX_STATE_BYTES = 2_000_000
 DEVICE_MODES = {"learning", "full_role"}
 
@@ -28,6 +31,32 @@ def _secret_hash(value):
     if not isinstance(value, str) or not value:
         raise ValueError("A non-empty secret is required.")
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _pairing_hash(value, salt=None):
+    if not isinstance(value, str) or len(value) != 8 or not value.isdigit():
+        raise ValueError("Pairing code must be exactly 8 digits.")
+    salt_bytes = secrets.token_bytes(16) if salt is None else bytes.fromhex(salt)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", value.encode("utf-8"), salt_bytes, PAIRING_HASH_ITERATIONS,
+    ).hex()
+    return salt_bytes.hex(), digest
+
+
+def _pairing_matches(item, code):
+    salt = item.get("code_salt")
+    if salt:
+        try:
+            _, candidate = _pairing_hash(code, salt)
+        except (ValueError, TypeError):
+            return False
+        return hmac.compare_digest(candidate, item.get("code_hash", ""))
+    # Transitional support for already-issued five-minute pairings from pre-Black builds.
+    try:
+        candidate = _secret_hash(code)
+    except ValueError:
+        return False
+    return hmac.compare_digest(candidate, item.get("code_hash", ""))
 
 
 def _clean_label(value, field="label"):
@@ -53,6 +82,8 @@ class MobileAccessStore:
     def _load(self):
         if not self.state_file.exists():
             return self._empty()
+        if self.state_file.is_symlink() or not self.state_file.is_file():
+            raise ValueError("Mobile access state must be a regular file.")
         if self.state_file.stat().st_size > MAX_STATE_BYTES:
             raise ValueError("Mobile access state is unexpectedly large.")
         data = json.loads(self.state_file.read_text(encoding="utf-8"))
@@ -63,9 +94,12 @@ class MobileAccessStore:
         return data
 
     def _save(self, data):
+        encoded = json.dumps(data, indent=2)
+        if len(encoded.encode("utf-8")) > MAX_STATE_BYTES:
+            raise ValueError("Mobile access state exceeded its storage limit.")
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.state_file.with_suffix(self.state_file.suffix + ".tmp")
-        temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary.write_text(encoded, encoding="utf-8")
         try:
             os.chmod(temporary, 0o600)
         except OSError:
@@ -79,6 +113,13 @@ class MobileAccessStore:
             if not item.get("used_at") and datetime.fromisoformat(item["expires_at"]) > now
         ]
 
+    def _active_devices(self, data):
+        now = self.now()
+        return [
+            item for item in data["devices"]
+            if not item.get("revoked_at") and datetime.fromisoformat(item["expires_at"]) > now
+        ]
+
     def create_pairing(self, label, mode="learning"):
         label = _clean_label(label, "device label")
         if mode not in DEVICE_MODES:
@@ -86,13 +127,17 @@ class MobileAccessStore:
         with self.lock:
             data = self._load()
             self._prune_pairings(data)
+            if len(data["pairings"]) >= MAX_ACTIVE_PAIRINGS:
+                raise ValueError("Too many active pairing codes. Let one expire before creating another.")
             raw_code = f"{secrets.randbelow(100_000_000):08d}"
+            salt, digest = _pairing_hash(raw_code)
             expires = self.now() + timedelta(minutes=PAIRING_MINUTES)
             pairing = {
                 "pairing_id": str(uuid.uuid4()),
                 "label": label,
                 "mode": mode,
-                "code_hash": _secret_hash(raw_code),
+                "code_salt": salt,
+                "code_hash": digest,
                 "created_at": self.now().isoformat(),
                 "expires_at": expires.isoformat(),
                 "used_at": None,
@@ -108,7 +153,8 @@ class MobileAccessStore:
             }
 
     def consume_pairing(self, code, device_label=None):
-        code_hash = _secret_hash(code)
+        if not isinstance(code, str) or len(code) != 8 or not code.isdigit():
+            raise PermissionError("Pairing code is invalid or expired.")
         with self.lock:
             data = self._load()
             now = self.now()
@@ -118,11 +164,13 @@ class MobileAccessStore:
                     continue
                 if datetime.fromisoformat(item["expires_at"]) <= now:
                     continue
-                if hmac.compare_digest(item["code_hash"], code_hash):
+                if _pairing_matches(item, code):
                     match = item
                     break
             if match is None:
                 raise PermissionError("Pairing code is invalid or expired.")
+            if len(self._active_devices(data)) >= MAX_ACTIVE_DEVICES:
+                raise PermissionError("Active paired-device limit reached.")
 
             raw_token = secrets.token_urlsafe(32)
             device = {

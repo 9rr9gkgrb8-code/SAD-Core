@@ -12,8 +12,11 @@ from pathlib import Path
 import threading
 import uuid
 
+from runtime_privacy import migrate_legacy_private_store, private_store_path
 
-MEMORY_FILE = Path(__file__).with_name("memory.json")
+
+LEGACY_MEMORY_FILE = Path(__file__).with_name("memory.json")
+MEMORY_FILE = private_store_path("memory.json")
 MAX_MEMORY_FILE_BYTES = 4_000_000
 MAX_MEMORIES_PER_ACCOUNT = 500
 MAX_MEMORY_CONTENT = 8_000
@@ -51,12 +54,16 @@ def _expiry(value):
 class MemoryStore:
     def __init__(self, path=MEMORY_FILE, now=None):
         self.path = Path(path)
+        if self.path == MEMORY_FILE:
+            migrate_legacy_private_store(self.path, LEGACY_MEMORY_FILE)
         self.now = now or _now
         self.lock = threading.RLock()
 
     def _load(self):
         if not self.path.exists():
             return {"schema_version": 1, "memories": {}}
+        if self.path.is_symlink() or not self.path.is_file():
+            raise ValueError("Memory path must be a regular file.")
         if self.path.stat().st_size > MAX_MEMORY_FILE_BYTES:
             raise ValueError("Memory file is unexpectedly large.")
         data = json.loads(self.path.read_text(encoding="utf-8"))

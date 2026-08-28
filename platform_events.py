@@ -9,11 +9,18 @@ from pathlib import Path
 import threading
 import uuid
 
+from runtime_privacy import migrate_legacy_private_store, private_store_path
 
-EVENTS_FILE = Path(__file__).with_name("platform_events.json")
+
+LEGACY_EVENTS_FILE = Path(__file__).with_name("platform_events.json")
+EVENTS_FILE = private_store_path("platform_events.json")
 MAX_EVENT_FILE_BYTES = 2_000_000
 MAX_EVENTS = 2_000
 MAX_EVENT_DETAILS_BYTES = 8_000
+SENSITIVE_DETAIL_KEYS = frozenset({
+    "args", "authorization", "content", "cookie", "diff", "material", "message",
+    "output", "password", "prompt", "secret", "source_code", "token", "transcript",
+})
 
 EVENT_TYPES = frozenset({
     "chat.session.created",
@@ -43,10 +50,23 @@ def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _reject_sensitive_detail_keys(value):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = str(key).strip().casefold().replace("-", "_")
+            if normalized in SENSITIVE_DETAIL_KEYS:
+                raise ValueError(f"Sensitive platform event detail key is not allowed: {key}")
+            _reject_sensitive_detail_keys(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _reject_sensitive_detail_keys(nested)
+
+
 def _safe_details(details):
     value = details or {}
     if not isinstance(value, dict):
         raise ValueError("Platform event details must be an object.")
+    _reject_sensitive_detail_keys(value)
     encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     if len(encoded) > MAX_EVENT_DETAILS_BYTES:
         raise ValueError("Platform event details are too large.")
@@ -58,11 +78,15 @@ class PlatformEventStore:
 
     def __init__(self, path=EVENTS_FILE):
         self.path = Path(path)
+        if self.path == EVENTS_FILE:
+            migrate_legacy_private_store(self.path, LEGACY_EVENTS_FILE)
         self.lock = threading.RLock()
 
     def _load(self):
         if not self.path.exists():
             return {"schema_version": 1, "next_seq": 1, "events": []}
+        if self.path.is_symlink() or not self.path.is_file():
+            raise ValueError("Platform event path must be a regular file.")
         if self.path.stat().st_size > MAX_EVENT_FILE_BYTES:
             raise ValueError("Platform event file is unexpectedly large.")
         data = json.loads(self.path.read_text(encoding="utf-8"))

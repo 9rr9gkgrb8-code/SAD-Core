@@ -18,6 +18,9 @@ SESSION_HOURS = 12
 MAX_FAILED_ATTEMPTS = 5
 LOCK_MINUTES = 15
 MAX_ACCOUNTS_FILE_BYTES = 2_000_000
+MAX_ACCOUNTS = 500
+MAX_SESSIONS_PER_ACCOUNT = 10
+MAX_TOTAL_SESSIONS = 1_000
 
 
 class Role(str, Enum):
@@ -82,7 +85,7 @@ def _password_hash(password, salt=None):
 
 
 class AuthService:
-    """Persist accounts locally while keeping login sessions in memory."""
+    """Persist accounts locally while keeping bounded login sessions in memory."""
 
     def __init__(self, accounts_file=ACCOUNTS_FILE, now=None):
         self.accounts_file = Path(accounts_file)
@@ -93,6 +96,8 @@ class AuthService:
     def _load(self):
         if not self.accounts_file.exists():
             return {"schema_version": 1, "accounts": []}
+        if self.accounts_file.is_symlink() or not self.accounts_file.is_file():
+            raise ValueError("Accounts path must be a regular file.")
         if self.accounts_file.stat().st_size > MAX_ACCOUNTS_FILE_BYTES:
             raise ValueError("Accounts file is unexpectedly large.")
         data = json.loads(self.accounts_file.read_text(encoding="utf-8"))
@@ -101,14 +106,42 @@ class AuthService:
         return data
 
     def _save(self, data):
+        encoded = json.dumps(data, indent=2)
+        if len(encoded.encode("utf-8")) > MAX_ACCOUNTS_FILE_BYTES:
+            raise ValueError("Accounts storage limit reached; existing account data was left unchanged.")
         self.accounts_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.accounts_file.with_suffix(self.accounts_file.suffix + ".tmp")
-        temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary.write_text(encoded, encoding="utf-8")
         try:
             os.chmod(temporary, 0o600)
         except OSError:
             pass
         os.replace(temporary, self.accounts_file)
+
+    def _prune_sessions(self, now=None):
+        now = now or self.now()
+        self.sessions = {
+            key: value for key, value in self.sessions.items()
+            if value.get("expires_at") and now < value["expires_at"]
+        }
+
+    @staticmethod
+    def _session_order(item):
+        session = item[1]
+        return session.get("created_at") or session.get("expires_at")
+
+    def _make_session_room(self, account_id, now):
+        self._prune_sessions(now)
+        account_sessions = sorted(
+            ((key, value) for key, value in self.sessions.items() if value.get("account_id") == account_id),
+            key=self._session_order,
+        )
+        while len(account_sessions) >= MAX_SESSIONS_PER_ACCOUNT:
+            key, _ = account_sessions.pop(0)
+            self.sessions.pop(key, None)
+        while len(self.sessions) >= MAX_TOTAL_SESSIONS:
+            key, _ = min(self.sessions.items(), key=self._session_order)
+            self.sessions.pop(key, None)
 
     def has_owner(self):
         return any(account.get("role") == Role.OWNER.value for account in self._load()["accounts"])
@@ -131,12 +164,12 @@ class AuthService:
             role_value = Role(role).value
             actor = self.require(actor_token)
             required = {
-            Role.STUDENT.value: "account:create_student",
-            Role.TEACHER.value: "account:create_teacher",
-            Role.DEVELOPER.value: "account:create_developer",
-            Role.REVIEWER.value: "account:create_reviewer",
-            Role.VIEWER.value: "account:create_viewer",
-            Role.OWNER.value: None,
+                Role.STUDENT.value: "account:create_student",
+                Role.TEACHER.value: "account:create_teacher",
+                Role.DEVELOPER.value: "account:create_developer",
+                Role.REVIEWER.value: "account:create_reviewer",
+                Role.VIEWER.value: "account:create_viewer",
+                Role.OWNER.value: None,
             }[role_value]
             if required is None or required not in ROLE_PERMISSIONS[actor["role"]]:
                 raise PermissionError("The signed-in account cannot create that role.")
@@ -145,6 +178,8 @@ class AuthService:
     def _create(self, data, username, password, role):
         normalized = _normalized_username(username)
         _validate_password(password)
+        if len(data["accounts"]) >= MAX_ACCOUNTS:
+            raise ValueError("Account limit reached for this Alpha installation.")
         if self._find(data, normalized):
             raise ValueError("That username already exists.")
         salt, password_hash = _password_hash(password)
@@ -182,8 +217,13 @@ class AuthService:
             account["failed_attempts"] = 0
             account["locked_until"] = None
             self._save(data)
+            self._make_session_room(account["account_id"], now)
             token = secrets.token_urlsafe(32)
-            self.sessions[token] = {"account_id": account["account_id"], "expires_at": now + timedelta(hours=SESSION_HOURS)}
+            self.sessions[token] = {
+                "account_id": account["account_id"],
+                "created_at": now,
+                "expires_at": now + timedelta(hours=SESSION_HOURS),
+            }
             return token
 
     def require(self, token, permission=None):
