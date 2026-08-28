@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
-
 
 JSON_CONTENT_TYPES = {"application/json"}
 
@@ -11,14 +9,34 @@ JSON_CONTENT_TYPES = {"application/json"}
 def _host_parts(value):
     if not isinstance(value, str) or not value.strip():
         raise PermissionError("A valid Host header is required.")
-    parsed = urlsplit("//" + value.strip())
-    if not parsed.hostname or parsed.username or parsed.password:
+    raw = value.strip()
+    if any(character.isspace() for character in raw) or any(character in raw for character in "/\\@?#"):
         raise PermissionError("Invalid Host header.")
-    try:
-        port = parsed.port
-    except ValueError as error:
-        raise PermissionError("Invalid Host header.") from error
-    return parsed.hostname.casefold(), port, value.strip()
+    if raw.startswith("["):
+        closing = raw.find("]")
+        if closing <= 1:
+            raise PermissionError("Invalid Host header.")
+        hostname = raw[1:closing]
+        remainder = raw[closing + 1:]
+        if remainder:
+            if not remainder.startswith(":") or not remainder[1:].isdigit():
+                raise PermissionError("Invalid Host header.")
+            port = int(remainder[1:])
+        else:
+            port = None
+    else:
+        if raw.count(":") > 1:
+            raise PermissionError("IPv6 Host headers must use brackets.")
+        if ":" in raw:
+            hostname, port_text = raw.rsplit(":", 1)
+            if not hostname or not port_text.isdigit():
+                raise PermissionError("Invalid Host header.")
+            port = int(port_text)
+        else:
+            hostname, port = raw, None
+    if not hostname or (port is not None and not 1 <= port <= 65535):
+        raise PermissionError("Invalid Host header.")
+    return hostname.casefold(), port, raw
 
 
 def validate_browser_request(
@@ -41,10 +59,8 @@ def validate_browser_request(
         raise PermissionError("Cross-site browser requests are not allowed.")
 
     origin = headers.get("Origin")
-    if origin:
-        parsed = urlsplit(origin)
-        if parsed.scheme.casefold() != expected_scheme.casefold() or parsed.netloc.casefold() != host_value.casefold():
-            raise PermissionError("Browser Origin does not match this SAD listener.")
+    if origin and origin.strip().casefold() != f"{expected_scheme}://{host_value}".casefold():
+        raise PermissionError("Browser Origin does not match this SAD listener.")
 
     if method == "POST":
         content_type = headers.get("Content-Type", "").split(";", 1)[0].strip().casefold()
