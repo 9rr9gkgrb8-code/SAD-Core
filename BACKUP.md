@@ -1,120 +1,121 @@
 # SAD Backup and Recovery
 
-SAD private state must be recoverable before Beta. Backups are explicit operator artifacts
-and contain sensitive local data. Encryption Tier 1 makes Windows backup creation use
-current-user Windows DPAPI by default.
+SAD has two encrypted recovery formats on Windows: a current-user DPAPI backup for routine recovery and a passphrase-encrypted portable backup for disaster recovery across Windows profiles or replacement machines.
 
-## Create an encrypted backup
+## Native Windows backup
 
 Stop high-write activity when practical, then run:
 
 ```powershell
-python backup.py create D:\SAD-Backups\sad-state.sadbak
+python backup.py create D:\SAD-Backups\sad-native.sadbak
+python backup.py verify D:\SAD-Backups\sad-native.sadbak
 ```
 
-On Windows the backup manager:
+The native backup manager:
 
-- discovers known private runtime files plus `local_data/`;
-- creates a transactionally consistent SQLite snapshot with SQLite's backup API;
+- discovers known private runtime files plus `local_data/` and `.env`;
+- creates a transactionally consistent SQLite snapshot;
 - writes an inner manifest with file count, byte count, and SHA-256 for every file;
-- verifies paths and SQLite integrity;
-- wraps the complete verified backup container with current-user Windows DPAPI;
-- refuses symlink/private-path escapes;
-- refuses backup destinations inside the SAD project/runtime tree;
+- validates paths and SQLite integrity;
+- wraps the complete verified archive with current-user Windows DPAPI;
+- refuses symlink/private-path escapes and destinations inside the SAD runtime tree;
 - verifies the encrypted result before reporting success.
 
-A normal `.sadbak` artifact is not a plaintext ZIP and should not expose account/chat/
-Memory/runtime contents if merely copied from storage. DPAPI protection is purpose-bound
-to SAD's backup contract.
+Native DPAPI backups are intended for the same Windows protection context. They are not the disaster-recovery format for a lost Windows profile.
 
-## Verify
+## Portable disaster-recovery backup
+
+Create a portable archive with:
 
 ```powershell
-python backup.py verify D:\SAD-Backups\sad-state.sadbak
+python backup.py portable-create D:\SAD-Backups\sad-portable.sadbak
+python backup.py portable-verify D:\SAD-Backups\sad-portable.sadbak
 ```
 
-SAD first decrypts the DPAPI container and then verifies the inner archive. Verification
-rejects:
+The passphrase is requested interactively. SAD never accepts it as a command-line argument and does not store it.
 
-- backup ciphertext that cannot be decrypted in the current Windows protection context;
-- missing/duplicate manifests;
-- undeclared archive files;
-- absolute or traversal paths;
-- size/hash mismatches;
-- unsupported backup versions;
-- corrupt SQLite runtime snapshots.
+Portable backup properties:
 
-Verification performs no restore.
+- AES-256-GCM authenticated encryption via the exact PyCA `cryptography` version pinned in `requirements.txt`;
+- PBKDF2-HMAC-SHA256 passphrase key derivation with a random per-backup salt;
+- random nonce and authenticated container header;
+- the whole archive is encrypted, including `.env` and compatibility files;
+- the runtime SQLite database is exported to a host-neutral representation only in memory;
+- source-profile DPAPI legacy-import archives are excluded because they cannot be useful on another profile;
+- the usual manifest, SHA-256, path, size, and SQLite integrity checks still run inside the encrypted container;
+- wrong passphrases or modified ciphertext fail authentication.
 
-## Restore
+The host-neutral SQLite representation is never deliberately written as a live restored database. During portable restore, SAD re-protects every runtime document for the destination Windows user before writing staged/live SQLite bytes.
+
+## Restore native backup
 
 **Stop SAD before restoring.** Then run:
 
 ```powershell
-python backup.py restore D:\SAD-Backups\sad-state.sadbak --confirm
+python backup.py restore D:\SAD-Backups\sad-native.sadbak --confirm
 ```
 
-Restore requires the explicit `--confirm` flag. The container must decrypt and the
-complete inner archive must verify before any live file is touched. Files are staged
-first, SQLite is integrity-checked again, and already-replaced targets are rolled back if
-a later replacement fails.
+## Restore portable backup
 
-Restore does not delete unrelated private files that are absent from an older backup.
-That conservative behavior prevents an old archive from silently erasing newer local
-state outside its manifest.
+On the destination Windows account or replacement Windows machine:
+
+```powershell
+python backup.py portable-restore D:\SAD-Backups\sad-portable.sadbak --confirm
+```
+
+Portable restore:
+
+1. authenticates/decrypts the outer AES-GCM container;
+2. verifies the complete inner manifest and every hash/path;
+3. verifies the host-neutral SQLite database in memory;
+4. re-encrypts each runtime document with destination-user DPAPI;
+5. verifies the new destination-protected database;
+6. stages all files;
+7. replaces live files only after the preceding checks;
+8. rolls back already-replaced targets if a later replacement fails.
+
+A portable restore intentionally requires Windows because SAD's live at-rest runtime contract is Windows DPAPI.
 
 ## Legacy plaintext backup migration
 
-Older verified ZIP backups can be converted on the Windows account that will own the new
-DPAPI artifact:
+Older verified ZIP backups can still be converted to a host-bound DPAPI artifact:
 
 ```powershell
-python backup.py encrypt-legacy D:\OldBackups\sad-state.zip D:\SAD-Backups\sad-state.sadbak
+python backup.py encrypt-legacy D:\OldBackups\sad-state.zip D:\SAD-Backups\sad-native.sadbak
 ```
 
-SAD verifies the legacy ZIP before encrypting it. The source is left untouched so the
-operator can verify the new encrypted copy before deciding how to securely dispose of the
-old plaintext artifact. Normal `verify` and `restore` commands reject plaintext legacy
-archives instead of silently downgrading confidentiality.
+Plaintext legacy backup verification/restoration remains explicit compatibility behavior. Normal backup operations do not silently downgrade encrypted archives to plaintext.
 
-## DPAPI portability boundary
+## What is included
 
-Tier 1 backup encryption is intentionally tied to the Windows DPAPI protection context.
-It is excellent for preventing a copied backup from being readable as plaintext, but it
-is **not yet a portable cross-machine archival format**. A backup may become unavailable
-if the required Windows user/profile protection material is lost.
+The backup manager includes registered private-runtime files, `.env` when present, and normal private files beneath `local_data/`. Ephemeral `.sad_sandbox/` and `.sad_dev/` workspaces are intentionally excluded from account/conversation/platform recovery.
 
-Therefore:
+Portable backups exclude `local_data/legacy_imported/` because those are migration rollback artifacts that may contain source-profile DPAPI material. The current live runtime database contains the authoritative imported state.
 
-1. Keep Windows account/profile recovery material healthy.
-2. Keep BitLocker or equivalent full-disk encryption enabled on the host and backup media
-   where possible.
-3. Perform a real restore drill before relying on backups.
-4. Do not delete the last known-good backup during migration.
-5. A later Beta milestone should add a separately recoverable portable encrypted export
-   format with explicit key/recovery handling.
+## Runtime persistence
 
-## What is currently included
+The protected runtime database now carries the live/default document state for:
 
-The manager includes existing files named in SAD's private-runtime registry, `.env` when
-present, and regular files under `local_data/`. Ephemeral `.sad_sandbox/` and `.sad_dev/`
-workspaces are intentionally not required for account/conversation/platform recovery.
-
-## SQLite persistence and at-rest protection
-
-Tier 2/3 platform state uses `local_data/sad_runtime.sqlite3` by default for:
-
+- accounts/profiles;
+- Chat history;
+- Forge/student progress;
+- mobile pairing/device trust state;
+- failure records;
+- Owner/Developer dashboard evidence;
+- dialogue settings;
 - Personal Memory;
 - governed Tool Actions;
-- local Platform app registrations;
-- Platform event history.
+- Platform client registrations;
+- Platform events.
 
-On the Windows deployment path, those document payloads are DPAPI-protected before being
-written to SQLite. Existing validated plaintext document rows are transactionally
-converted on first protected startup. After the database declares the DPAPI scheme,
-plaintext rows are treated as downgrade/tamper evidence and startup fails closed.
+Passwords remain one-way PBKDF2 verifier material. They are not made decryptable merely because the account document itself receives at-rest encryption.
 
-Validated legacy JSON can still be imported when SQLite does not already contain that
-namespace. Accounts, conversations, progress, dashboard/failure state, settings, and
-mobile state remain compatible private stores in this milestone and still depend on the
-host's full-disk/file encryption until their later persistence migration.
+## Recovery rules
+
+1. Keep BitLocker or equivalent full-disk encryption enabled on the live host.
+2. Keep at least one portable backup physically/logically separate from the SAD host.
+3. Do not store the portable passphrase beside the archive.
+4. Do not delete the last known-good backup while testing a new format or migration.
+5. Complete `ENCRYPTION_TIER2_UAT.md`, preferably including a restore under a second disposable Windows profile, before relying on portable disaster recovery.
+6. Loss of the portable passphrase means SAD cannot recover that portable archive.
+7. Automated CI proves format and API behavior, not the custody of your real passphrase or physical backup media.
