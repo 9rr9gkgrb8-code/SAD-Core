@@ -3,6 +3,7 @@ import platform
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from runtime_database import AT_REST_SCHEME, RuntimeDatabase
@@ -69,7 +70,7 @@ class RuntimeDatabaseTests(unittest.TestCase):
 
         raw = path.read_bytes()
         self.assertNotIn(secret.encode("utf-8"), raw)
-        with sqlite3.connect(str(path)) as connection:
+        with closing(sqlite3.connect(str(path))) as connection:
             payload = connection.execute(
                 "SELECT payload_json FROM runtime_documents WHERE namespace='memory'"
             ).fetchone()[0]
@@ -97,7 +98,7 @@ class RuntimeDatabaseTests(unittest.TestCase):
         path = self.root / "downgrade.sqlite3"
         protected = RuntimeDatabase(path, protect_at_rest=True)
         protected.write_document("memory", {"schema_version": 1, "memories": {}}, max_bytes=100_000)
-        with sqlite3.connect(str(path)) as connection:
+        with closing(sqlite3.connect(str(path))) as connection:
             connection.execute(
                 "UPDATE runtime_documents SET payload_json=? WHERE namespace='memory'",
                 (json.dumps({"schema_version": 1, "memories": {"leak": "plaintext"}}),),
