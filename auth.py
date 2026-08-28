@@ -2,17 +2,15 @@
 
 import hashlib
 import hmac
-import json
-import os
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from pathlib import Path
 import threading
 
+from runtime_document import RuntimeJSONDocument
 
-ACCOUNTS_FILE = Path(__file__).with_name("accounts.json")
+
 PASSWORD_ITERATIONS = 600_000
 SESSION_HOURS = 12
 MAX_FAILED_ATTEMPTS = 5
@@ -21,6 +19,8 @@ MAX_ACCOUNTS_FILE_BYTES = 2_000_000
 MAX_ACCOUNTS = 500
 MAX_SESSIONS_PER_ACCOUNT = 10
 MAX_TOTAL_SESSIONS = 1_000
+ACCOUNTS_NAMESPACE = "accounts"
+ACCOUNTS_FILENAME = "accounts.json"
 
 
 class Role(str, Enum):
@@ -84,39 +84,54 @@ def _password_hash(password, salt=None):
     return salt_bytes.hex(), digest.hex()
 
 
-class AuthService:
-    """Persist accounts locally while keeping bounded login sessions in memory."""
+def _validate_accounts_data(data):
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("accounts"), list):
+        raise ValueError("Unsupported or invalid accounts data.")
+    if len(data["accounts"]) > MAX_ACCOUNTS:
+        raise ValueError("Accounts data exceeds the installation account limit.")
+    seen_ids = set()
+    seen_users = set()
+    for account in data["accounts"]:
+        if not isinstance(account, dict):
+            raise ValueError("Invalid account record.")
+        if account.get("role") not in ROLE_PERMISSIONS:
+            raise ValueError("Account record contains an unsupported role.")
+        account_id = account.get("account_id")
+        username = account.get("username")
+        if not isinstance(account_id, str) or not account_id or account_id in seen_ids:
+            raise ValueError("Account IDs must be unique non-empty strings.")
+        if not isinstance(username, str) or not username or username in seen_users:
+            raise ValueError("Account usernames must be unique non-empty strings.")
+        if not isinstance(account.get("password_salt"), str) or not isinstance(account.get("password_hash"), str):
+            raise ValueError("Account password verifier data is invalid.")
+        seen_ids.add(account_id)
+        seen_users.add(username)
+    return data
 
-    def __init__(self, accounts_file=ACCOUNTS_FILE, now=None):
-        self.accounts_file = Path(accounts_file)
+
+class AuthService:
+    """Persist accounts in encrypted runtime state while keeping login sessions in memory."""
+
+    def __init__(self, accounts_file=None, now=None, database=None):
         self.now = now or _now
+        self.persistence = RuntimeJSONDocument(
+            ACCOUNTS_FILENAME,
+            ACCOUNTS_NAMESPACE,
+            {"schema_version": 1, "accounts": []},
+            _validate_accounts_data,
+            MAX_ACCOUNTS_FILE_BYTES,
+            path=accounts_file,
+            database=database,
+        )
+        self.accounts_file = self.persistence.path
         self.sessions = {}
         self.lock = threading.RLock()
 
     def _load(self):
-        if not self.accounts_file.exists():
-            return {"schema_version": 1, "accounts": []}
-        if self.accounts_file.is_symlink() or not self.accounts_file.is_file():
-            raise ValueError("Accounts path must be a regular file.")
-        if self.accounts_file.stat().st_size > MAX_ACCOUNTS_FILE_BYTES:
-            raise ValueError("Accounts file is unexpectedly large.")
-        data = json.loads(self.accounts_file.read_text(encoding="utf-8"))
-        if data.get("schema_version") != 1 or not isinstance(data.get("accounts"), list):
-            raise ValueError("Unsupported or invalid accounts file.")
-        return data
+        return self.persistence.load()
 
     def _save(self, data):
-        encoded = json.dumps(data, indent=2)
-        if len(encoded.encode("utf-8")) > MAX_ACCOUNTS_FILE_BYTES:
-            raise ValueError("Accounts storage limit reached; existing account data was left unchanged.")
-        self.accounts_file.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.accounts_file.with_suffix(self.accounts_file.suffix + ".tmp")
-        temporary.write_text(encoded, encoding="utf-8")
-        try:
-            os.chmod(temporary, 0o600)
-        except OSError:
-            pass
-        os.replace(temporary, self.accounts_file)
+        self.persistence.save(data)
 
     def _prune_sessions(self, now=None):
         now = now or self.now()
