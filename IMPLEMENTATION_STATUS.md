@@ -6,11 +6,12 @@ Updated: August 27, 2026
 
 **SAD is the platform.** Chat, Voice, Personal Study, Forge Learning, Personal Memory,
 Governed Tool Actions, Developer Workspace, controlled repair, accounts/roles, Mobile,
-scoped local-app credentials, and platform events are governed SAD modules/clients.
+scoped local-app credentials, platform events, runtime persistence, and backup/recovery
+are governed SAD modules or platform infrastructure.
 
-The historical Protocol White audit remains recorded as blocked at its old independent
-`Forge-Core` Gate 2. That separate-service topology is paused under the current
-SAD-as-platform architecture and was not retroactively marked as passing.
+The historical Protocol White independent `Forge-Core` Gate 2 remains paused under the
+current SAD-as-platform architecture. Protocol Black remains the active adversarial
+security gate.
 
 ## Current platform milestone
 
@@ -20,139 +21,133 @@ SAD-as-platform architecture and was not retroactively marked as passing.
 - Core network binding: **loopback only**
 - Dynamic plugin execution: **disabled**
 - AI Git authority: **none**
+- Tier 2/3 default persistence: **versioned SQLite runtime database**
+- Backup/recovery: **hash-manifested verified operator workflow**
+- CI OS coverage: **Ubuntu 24.04 + Windows 2025 runners**
 
-## Completed platform capabilities
+## Foundation Stabilization
 
-### Core/discovery
+This milestone directly addresses the lowest senior-engineering readiness scores without
+pretending host/device work can be completed from GitHub.
 
-- Role-filtered `/v1/platform`, `/modules`, `/capabilities`, and compatibility negotiation.
-- Capability version/lifecycle metadata.
-- Backward-compatible minimal `/health` contract.
-- Read-only Platform dashboard.
+### Runtime database
 
-### Conversation and Voice
+`runtime_database.py` introduces `local_data/sad_runtime.sqlite3` with:
 
-- Private durable per-account Chat sessions with multi-turn context.
-- Visible Local AI vs Built-in dialogue engine status.
-- Transcript-based Voice bridge using the same account-owned Chat history.
-- Voice returns text suitable for a future local TTS client.
+- explicit database schema version;
+- named document namespaces and document schema versions;
+- bounded document/database size;
+- SQLite transactions, full synchronous writes, and busy timeout;
+- `quick_check` integrity validation;
+- consistent SQLite snapshot support;
+- validated one-time legacy JSON import;
+- verified import before protected legacy archival;
+- fail-closed conflict when both SQLite and legacy JSON look authoritative.
 
-### Personal Memory
+Default SQLite namespaces now cover:
 
-- Explicit per-account durable `memory.json` store.
-- Categories: fact, preference, goal, project, note.
-- Create/list/search/edit/enable/disable/expiry/delete.
-- Cross-account memory access fails closed.
-- Only enabled, non-expired memory may enter Local AI Chat/Voice context.
-- Per-turn `use_memory: false` excludes saved Memory.
-- Built-in dialogue never reports saved Memory use.
-- Memory is Git-ignored and excluded from release-source scanning.
+- Personal Memory;
+- governed Tool Actions;
+- Platform local-app registrations;
+- Platform event history.
 
-### Governed Tool Actions
+Explicit custom JSON paths remain supported for compatibility/test fixtures. Accounts,
+Chat/progress/settings/failure/mobile state remain compatible private stores for now and
+are included in backup/recovery.
 
-- Fixed reviewed Tier 3 tool catalog:
-  - `platform.status`
-  - `memory.search`
-  - `memory.remember`
-  - `memory.forget`
-- Per-account durable action records in ignored `tool_actions.json`.
-- Read-only tools can execute when ready.
-- State-changing personal tools require explicit approve/reject before execution.
-- Rejected or unapproved mutation cannot execute.
-- No generic shell, arbitrary network, dynamic plugin/Python loader, package installer,
-  unrestricted filesystem action, or Git tool.
+### Backup/recovery
 
-### Personal Study and Forge
+`backup.py` + `backup_manager.py` support:
 
-- Request-directed Study help, including explanation, work checking, writing/essay/rubric
-  help and optional Local AI generation.
-- Forge quests, hints, mastery/boss checks, durable progress, XP/ranks, and companion
-  progression.
+```text
+create -> verify -> explicit offline restore
+```
 
-### Coding and controlled repair
+The archive has per-file SHA-256, size/path manifesting, SQLite backup-API snapshots,
+SQLite integrity verification, traversal/undeclared/tamper rejection, external-destination
+enforcement, staged restore, explicit `--confirm`, and rollback of already-replaced files
+on restore failure.
 
-- Developer Workspace multi-file coding with human-approved scope, private worktree,
-  strict generated edit plan, Docker verification, exact diff/test evidence, Owner-only
-  apply/rollback, stale/tamper checks, backup, and whole-set restoration on failure.
-- Failure-driven repair with strict scoped proposal, isolated verification, exact tested
-  diff, Owner YES/NO, stale-source check, atomic local apply, backup, and rollback.
-- Coding/repair agents have no Git commit/push/fetch/rebase/merge/credential authority.
+### Voice runtime
 
-### Platform apps/events
+The existing authenticated `/v1/voice/turn` transcript bridge now has a provider-neutral
+local audio layer:
 
-- Owner-managed scoped loopback `SAD-App` credentials.
-- One-time app secrets, hashed at rest, rotation/revocation.
-- Machine scopes limited to Platform discovery/catalog/modules/compatibility/events.
-- Machine credentials cannot impersonate human users.
-- Privacy-minimized bounded platform events.
-- Tier 3 memory/tool lifecycle events contain metadata only, not private Memory content,
-  tool arguments/output, conversations, code/diffs, or secrets.
-- Standard-library loopback Python SDK.
+```text
+WAV -> loopback STT -> SAD Voice -> loopback TTS -> WAV
+```
 
-### Mobile/PWA
+`voice_runtime.py` restricts STT/TTS to reviewed fixed contracts on loopback HTTP and
+bounds payloads/timeouts. `voice_client.py` orchestrates one authenticated audio turn.
+Speech services gain no SAD user/app/tool/coding/Git authority. Microphone capture and
+speaker playback remain real-client UAT.
 
-- Separate TLS-only paired mobile gateway while Core remains loopback-only.
-- One-time pairing, expiry, throttling, device revocation, Secure/HttpOnly/SameSite=Strict
-  paired-device cookie.
-- Learning mode allows exact personal routes for Chat, Voice, Memory, governed Tools,
-  Study, Forge, and own progress.
-- Full-role mode still defers human routes to account RBAC.
-- `SAD-App` machine endpoints are blocked through Mobile in all device modes.
-- Memory & Tools phone-first PWA surface.
-- Service worker caches static shell only and excludes all `/v1/*` and `/mobile/*` data.
+### Windows readiness
 
-## Automated verification
+CI now executes compile, browser syntax, full suite, Protocol Black, release gate, and
+Alpha preflight on:
 
-Tier 3 automated coverage includes:
+- Ubuntu 24.04 / Python 3.11;
+- Windows Server 2025 runner / Python 3.11;
+- Windows Server 2025 runner / Python 3.12.
 
-- Memory account isolation/search/edit/delete.
-- enabled/disabled/expired context behavior.
-- Local AI Memory injection and per-turn opt-out.
-- governed tool ownership and mutation approval.
-- unknown tool rejection.
-- event privacy.
-- mobile exact-route admission and privileged denial.
-- Memory & Tools responsive/accessibility/PWA-cache contract.
-- Platform registry schema/version/authority metadata.
-- existing Chat/Voice/Study/Forge/coding/repair/account/mobile security regressions.
-- compile and browser JavaScript syntax checks.
-- Alpha release integrity/preflight.
-- real CI Docker isolation proof.
+`windows_doctor.py` checks the Windows platform gate, Alpha core readiness, writable
+private data, and SQLite runtime integrity. `start_sad_windows.ps1` refuses startup when
+that host preflight blocks.
 
-## Remaining operational work
+## Existing completed capabilities
 
-The code milestone is not the same as deployment proof. Remaining host/device work:
+- role-filtered Platform discovery and compatibility negotiation;
+- durable private SAD Chat and transcript Voice bridge;
+- explicit account-owned Memory;
+- governed Tool Actions with exact-argument approval integrity;
+- request-directed Personal Study;
+- game-first Forge quests/hints/mastery/XP/progress;
+- governed multi-file Developer Workspace;
+- failure-driven isolated repair and exact tested live apply/rollback;
+- local accounts/RBAC;
+- scoped loopback `SAD-App` credentials and privacy-minimized events;
+- paired TLS Mobile/PWA with learning/full-role admission;
+- Protocol Black security hardening including bounded HTTP admission and supply-chain pinning.
 
-1. Pull the final merged `main` commit to the deployment Windows computer.
-2. Configure and validate the intended local model.
-3. Repeat the reviewed Docker proof on that actual host.
-4. Run base Alpha human UAT for all representative roles.
-5. Run `PLATFORM_TIER2_UAT.md` local-app/event/Voice transport checks.
-6. Run `PLATFORM_TIER3_UAT.md` Memory/Tool ownership, context, approval, event privacy,
-   mobile, PWA, keyboard, screen-reader, zoom, and narrow-screen checks.
-7. Configure phone-trusted TLS/private bind address and require
-   `python mobile_doctor.py` → `MOBILE GATEWAY: READY` before claiming mobile operation.
-8. Pair/test real iPhone/Android devices for any platform support that will be claimed.
-9. Add real local STT + TTS if full microphone-to-speaker Voice is desired.
-10. Add Windows packaging/installer/service only after host-level Alpha behavior is
-    accepted and migration/backup rules are defined.
+## Automated release gate
 
-## Current release gate
-
-For the SAD-as-platform Alpha candidate, require:
+A release candidate must pass:
 
 ```text
 python -m compileall -q .
 python -m unittest -v
+python protocol_black.py
 python release_gate.py
 python alpha_doctor.py
 ```
 
-Automatic coding/repair readiness also requires `python docker_proof.py` using the
-reviewed digest-pinned sandbox image. Mobile operation additionally requires
-`mobile_doctor.py` and device-specific UAT.
+The CI matrix must pass on all declared Ubuntu/Windows Python legs. Automatic coding and
+repair additionally require the digest-pinned Docker proof.
 
-A release is blocked by any failing core test, release-integrity failure, authority
-leak, Memory/tool cross-account access, unapproved mutating tool execution, private-data
-cache/source leakage, unavailable required coding isolation, stale/tampered tested code,
-or failed live/Git integrity evidence.
+## Remaining real-world blockers
+
+The code milestone is not deployment proof. Remaining work requiring actual devices or
+host administration:
+
+1. Pull the exact final green `main` commit onto the intended Windows 11 host.
+2. Run the full local suite, Protocol Black, and `windows_doctor.py` there.
+3. Configure and validate the intended local model/runtime on that host.
+4. Validate Docker Desktop permissions and repeat the reviewed digest-pinned Docker proof.
+5. Create/verify a backup on real backup media and perform a disposable restore drill.
+6. Run full human role/accessibility Alpha UAT.
+7. Configure private TLS and complete real iPhone/Android pairing/mobile UAT.
+8. Install/configure reviewed loopback STT/TTS providers and test real microphone/speaker
+   behavior if audio Voice will be claimed.
+9. Validate Windows firewall/account/full-disk-encryption expectations and LAN/router/no-
+   public-port-forwarding policy.
+10. Configure GitHub branch protection/rulesets administratively so green CI is enforced,
+    not merely followed by convention.
+11. Continue later migration of remaining compatible JSON state only after backup/restore
+    and migration behavior is accepted on the real host.
+
+## Release language
+
+SAD may be described as a **Protocol-Black-hardened local-first Platform Alpha** when the
+code gates are green. Do not call Windows deployment, mobile operation, full audio Voice,
+or production readiness complete until their real host/device acceptance gates pass.
