@@ -13,6 +13,7 @@ from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from forge_worker import verify_approved_job
+from memory_store import MemoryStore
 from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
 from platform_clients import PlatformClientStore
@@ -21,6 +22,7 @@ from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, Platfor
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from study_generator import generate_study_result
+from tool_actions import ToolActionStore
 
 
 API_VERSION = "v1"
@@ -31,7 +33,7 @@ class SadApiService:
     def __init__(
         self, auth=None, dashboard=None, progress=None, mobile_access=None,
         conversations=None, developer_workspaces=None, platform=None,
-        platform_clients=None, platform_events=None,
+        platform_clients=None, platform_events=None, memory=None, tool_actions=None,
     ):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
@@ -39,9 +41,11 @@ class SadApiService:
         self.mobile_access = mobile_access or MobileAccessStore()
         self.conversations = conversations or ConversationStore()
         self.developer_workspaces = developer_workspaces or DeveloperWorkspaceStore()
+        self.memory = memory or MemoryStore()
         self.platform = platform or PlatformRegistry()
         self.platform_clients = platform_clients or PlatformClientStore()
         self.platform_events = platform_events or PlatformEventStore()
+        self.tool_actions = tool_actions or ToolActionStore(memory=self.memory, platform=self.platform)
         self.last_event_error = None
 
     def token(self, headers):
@@ -51,7 +55,7 @@ class SadApiService:
         return value[7:]
 
     def _publish(self, event_type, *, subject_id=None, details=None):
-        """Events are auxiliary metadata; an event-store problem must not corrupt a completed primary action."""
+        """Events are auxiliary metadata; event failure cannot corrupt a completed primary action."""
         try:
             self.platform_events.publish(event_type, subject_id=subject_id, details=details)
             self.last_event_error = None
@@ -107,12 +111,8 @@ class SadApiService:
             client = self.platform_clients.require(authorization, "platform:modules")
             manifest = self._machine_manifest(client)
             return 200, {"modules": [{
-                "module_id": "sad.platform",
-                "name": "SAD Platform Core",
-                "kind": "core",
-                "status": "available",
-                "module_version": "2.0.0",
-                "capabilities": manifest["capabilities"],
+                "module_id": "sad.platform", "name": "SAD Platform Core", "kind": "core",
+                "status": "available", "module_version": "3.0.0", "capabilities": manifest["capabilities"],
             }]}
         if path == "/v1/platform/client/compatibility":
             client = self.platform_clients.require(authorization, "platform:compatibility")
@@ -120,9 +120,7 @@ class SadApiService:
         if path == "/v1/platform/client/events":
             client = self.platform_clients.require(authorization, "platform:events")
             return 200, self.platform_events.read(
-                after_seq=body.get("after_seq", 0),
-                limit=body.get("limit", 100),
-                event_types=client["event_types"],
+                after_seq=body.get("after_seq", 0), limit=body.get("limit", 100), event_types=client["event_types"],
             )
         raise KeyError("Endpoint not found.")
 
@@ -158,16 +156,13 @@ class SadApiService:
         if method == "GET" and path == "/v1/platform/modules":
             return 200, {"modules": self.platform.visible_modules(permissions)}
         if method == "POST" and path == "/v1/platform/compatibility":
-            allowed = self.platform.allowed_capability_ids(permissions)
-            return 200, self.platform.compatibility(body.get("requirements", []), allowed)
+            return 200, self.platform.compatibility(body.get("requirements", []), self.platform.allowed_capability_ids(permissions))
         if method == "GET" and path == "/v1/platform/clients":
             self.auth.require(token, "platform:manage")
             return 200, {"clients": self.platform_clients.list()}
         if method == "POST" and path == "/v1/platform/clients":
             self.auth.require(token, "platform:manage")
-            client = self.platform_clients.create(
-                body.get("name", ""), body.get("capability_ids", []), body.get("event_types", []),
-            )
+            client = self.platform_clients.create(body.get("name", ""), body.get("capability_ids", []), body.get("event_types", []))
             self._publish("platform.client.created", subject_id=client["client_id"], details={"name": client["name"]})
             return 201, client
         match = re.fullmatch(r"/v1/platform/clients/([0-9a-f-]+)/(rotate|revoke)", path)
@@ -184,9 +179,57 @@ class SadApiService:
         if method == "POST" and path == "/v1/platform/events/read":
             self.auth.require(token, "platform:manage")
             return 200, self.platform_events.read(
-                after_seq=body.get("after_seq", 0), limit=body.get("limit", 100),
-                event_types=body.get("event_types"),
+                after_seq=body.get("after_seq", 0), limit=body.get("limit", 100), event_types=body.get("event_types"),
             )
+
+        # User-controlled memory. No cross-account ID can be used successfully.
+        if method == "GET" and path == "/v1/memory":
+            return 200, {"memories": self.memory.list(account_id)}
+        if method == "POST" and path == "/v1/memory":
+            item = self.memory.create(
+                account_id, body.get("category", "note"), body.get("title", ""), body.get("content", ""),
+                enabled=body.get("enabled", True), expires_at=body.get("expires_at"),
+            )
+            self._publish("memory.created", subject_id=item["memory_id"], details={"category": item["category"]})
+            return 201, item
+        if method == "POST" and path == "/v1/memory/search":
+            return 200, {"memories": self.memory.search(
+                account_id, body.get("query", ""), body.get("categories"),
+                limit=body.get("limit", 20), enabled_only=bool(body.get("enabled_only", False)),
+            )}
+        match = re.fullmatch(r"/v1/memory/([0-9a-f-]+)(?:/(delete))?", path)
+        if method == "POST" and match:
+            memory_id, action = match.groups()
+            if action == "delete":
+                result = self.memory.delete(account_id, memory_id)
+                self._publish("memory.deleted", subject_id=memory_id)
+                return 200, result
+            item = self.memory.update(account_id, memory_id, body)
+            self._publish("memory.updated", subject_id=memory_id, details={"category": item["category"], "enabled": item["enabled"]})
+            return 200, item
+
+        # Governed internal tools. No arbitrary tool registration/execution exists here.
+        if method == "GET" and path == "/v1/tools":
+            return 200, {"tools": self.tool_actions.available_tools(permissions)}
+        if method == "GET" and path == "/v1/tools/actions":
+            return 200, {"actions": self.tool_actions.list(account_id)}
+        if method == "POST" and path == "/v1/tools/actions":
+            action = self.tool_actions.create(account_id, permissions, body.get("tool_id", ""), body.get("args", {}))
+            self._publish("tool.action.created", subject_id=action["action_id"], details={"tool_id": action["tool_id"], "state": action["state"]})
+            return 201, action
+        match = re.fullmatch(r"/v1/tools/actions/([0-9a-f-]+)(?:/(decision|execute))?", path)
+        if match:
+            action_id, action_name = match.groups()
+            if method == "GET" and not action_name:
+                return 200, self.tool_actions.get(account_id, action_id)
+            if method == "POST" and action_name == "decision":
+                action = self.tool_actions.decide(account_id, action_id, body.get("decision"))
+                self._publish("tool.action.decided", subject_id=action_id, details={"decision": action["decision"]})
+                return 200, action
+            if method == "POST" and action_name == "execute":
+                action = self.tool_actions.execute(account, permissions, action_id)
+                self._publish("tool.action.completed", subject_id=action_id, details={"tool_id": action["tool_id"], "state": action["state"]})
+                return 200, action
 
         if method == "GET" and path == "/v1/chat/sessions":
             return 200, {"sessions": self.conversations.list_sessions(account_id)}
@@ -206,10 +249,11 @@ class SadApiService:
                 return 200, archived
             session = self.conversations.raw_session(account_id, session_id)
             profile = self.auth.get_profile(token)
-            reply, engine = generate_chat_reply(body.get("message", ""), profile, session)
+            memories = [] if body.get("use_memory") is False else self.memory.context(account_id)
+            reply, engine = generate_chat_reply(body.get("message", ""), profile, session, memories)
             updated = self.conversations.append_turn(account_id, session_id, body.get("message", ""), reply, engine)
-            self._publish("chat.message.created", subject_id=session_id, details={"engine": engine})
-            return 200, {"reply": reply, "engine": engine, "session": updated}
+            self._publish("chat.message.created", subject_id=session_id, details={"engine": engine, "memory_context": bool(memories)})
+            return 200, {"reply": reply, "engine": engine, "memory_used": bool(memories) and engine == "local_model", "session": updated}
 
         if method == "POST" and path == "/v1/voice/turn":
             transcript = body.get("transcript", "")
@@ -222,16 +266,14 @@ class SadApiService:
                 self._publish("chat.session.created", subject_id=session_id)
             session = self.conversations.raw_session(account_id, session_id)
             profile = self.auth.get_profile(token)
-            reply, engine = generate_chat_reply(transcript.strip(), profile, session)
+            memories = [] if body.get("use_memory") is False else self.memory.context(account_id)
+            reply, engine = generate_chat_reply(transcript.strip(), profile, session, memories)
             self.conversations.append_turn(account_id, session_id, transcript.strip(), reply, engine)
-            self._publish("voice.turn.completed", subject_id=session_id, details={"engine": engine})
+            self._publish("voice.turn.completed", subject_id=session_id, details={"engine": engine, "memory_context": bool(memories)})
             return 200, {
-                "session_id": session_id,
-                "reply": reply,
-                "speech_text": reply,
-                "engine": engine,
-                "input_mode": "transcript",
-                "output_mode": "text_for_local_tts",
+                "session_id": session_id, "reply": reply, "speech_text": reply, "engine": engine,
+                "memory_used": bool(memories) and engine == "local_model",
+                "input_mode": "transcript", "output_mode": "text_for_local_tts",
             }
 
         if method == "POST" and path == "/v1/dev/workspaces/scope":
@@ -271,10 +313,7 @@ class SadApiService:
             return 200, {"accounts": self.auth.list_accounts(token)}
         if method == "GET" and path == "/v1/students":
             students = self.auth.list_students(token)
-            return 200, {"students": [
-                {**student, "progress": self.progress.get(student["account_id"]).to_dict()}
-                for student in students
-            ]}
+            return 200, {"students": [{**student, "progress": self.progress.get(student["account_id"]).to_dict()} for student in students]}
         if method == "POST" and path == "/v1/accounts":
             return 201, self.auth.create_account(body["username"], body["password"], body["role"], token)
         match = re.fullmatch(r"/v1/accounts/([0-9a-f-]+)/active", path)
@@ -334,8 +373,8 @@ class SadApiService:
             if method == "POST" and action == "result":
                 artifacts = tuple(Artifact(**artifact) for artifact in body.get("artifacts", []))
                 result = ForgeResult(
-                    body["job_id"], body["request_id"], body["correlation_id"], body["state"],
-                    artifacts, tuple(body.get("diagnostics", [])), tuple(body.get("tests", [])), body.get("error"),
+                    body["job_id"], body["request_id"], body["correlation_id"], body["state"], artifacts,
+                    tuple(body.get("diagnostics", [])), tuple(body.get("tests", [])), body.get("error"),
                 )
                 return 200, asdict(self.dashboard.record_forge_result(work_id, result, token))
             if method == "POST" and action == "decision":
