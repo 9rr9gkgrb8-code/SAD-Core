@@ -1,7 +1,7 @@
 "use strict";
 (()=>{
   const byId=id=>document.getElementById(id);
-  const escapeText=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;","&gt;":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
+  const escapeText=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const apiCall=(path,options={})=>window.api(path,options);
   const MACHINE_CAPABILITIES=["platform:discover","platform:catalog","platform:modules","platform:compatibility","platform:events"];
   const EVENT_TYPES=["chat.session.created","chat.message.created","chat.session.archived","development.workspace.created","development.workspace.executed","development.workspace.applied","development.workspace.rolled_back","failure.created","forge.quest.created","forge.quest.completed","platform.client.created","platform.client.rotated","platform.client.revoked","voice.turn.completed"];
