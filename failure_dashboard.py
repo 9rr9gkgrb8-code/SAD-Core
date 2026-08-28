@@ -19,7 +19,7 @@ from sandbox import approve_sandbox_proposal
 
 DASHBOARD_STATE_FILE = Path(__file__).with_name("dashboard_state.json")
 DASHBOARD_NAMESPACE = "dashboard_state"
-MAX_DASHBOARD_BYTES = 12_000_000
+MAX_DASHBOARD_BYTES = 8_000_000
 
 
 def synchronized(method):
