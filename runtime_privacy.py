@@ -1,8 +1,8 @@
 """Shared private-runtime path policy for SAD.
 
 Private state belongs below local_data/ whenever practical. This module also migrates
-legacy root-level private stores before the API becomes available so coding/release
-surfaces cannot mistake private JSON for source.
+legacy root-level private stores before services become available so coding/release
+surfaces cannot mistake private runtime data for source.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ PRIVATE_RUNTIME_FILES = frozenset({
     "memory.json",
     "platform_clients.json",
     "platform_events.json",
+    "sad_runtime.sqlite3",
     "settings.json",
     "student_progress.json",
     "tool_actions.json",
