@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,9 +17,11 @@ import uuid
 
 from memory_store import MemoryStore
 from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
+from runtime_privacy import migrate_legacy_private_store, private_store_path
 
 
-TOOL_ACTION_FILE = Path(__file__).with_name("tool_actions.json")
+LEGACY_TOOL_ACTION_FILE = Path(__file__).with_name("tool_actions.json")
+TOOL_ACTION_FILE = private_store_path("tool_actions.json")
 MAX_TOOL_ACTION_FILE_BYTES = 4_000_000
 MAX_ACTIONS = 2_000
 MAX_ARGS_BYTES = 32_000
@@ -51,19 +54,31 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def _bounded_json(value, maximum, label):
+def _canonical_json(value):
     try:
-        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
     except (TypeError, ValueError) as error:
-        raise ValueError(f"{label} must be JSON serializable.") from error
+        raise ValueError("Value must be JSON serializable.") from error
+
+
+def _bounded_json(value, maximum, label):
+    encoded = _canonical_json(value)
     if len(encoded) > maximum:
         raise ValueError(f"{label} is too large.")
     return value
 
 
+def _args_hash(args):
+    return hashlib.sha256(_canonical_json(args)).hexdigest()
+
+
 class ToolActionStore:
     def __init__(self, path=TOOL_ACTION_FILE, memory=None, platform=None, now=None):
         self.path = Path(path)
+        if self.path == TOOL_ACTION_FILE:
+            migrate_legacy_private_store(self.path, LEGACY_TOOL_ACTION_FILE)
         self.memory = memory or MemoryStore()
         self.platform = platform or PlatformRegistry()
         self.now = now or _now
@@ -72,6 +87,8 @@ class ToolActionStore:
     def _load(self):
         if not self.path.exists():
             return {"schema_version": 1, "actions": {}}
+        if self.path.is_symlink() or not self.path.is_file():
+            raise ValueError("Tool action path must be a regular file.")
         if self.path.stat().st_size > MAX_TOOL_ACTION_FILE_BYTES:
             raise ValueError("Tool action file is unexpectedly large.")
         data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -113,6 +130,15 @@ class ToolActionStore:
     def _public(action):
         return {key: value for key, value in action.items() if key != "account_id"}
 
+    @staticmethod
+    def _integrity_matches(action, tool):
+        return (
+            action.get("tool_id") == tool.tool_id
+            and action.get("mutates_state") is tool.mutates_state
+            and action.get("approval_required") is tool.approval_required
+            and action.get("args_sha256") == _args_hash(action.get("args"))
+        )
+
     def create(self, account_id, permissions, tool_id, args):
         tool = TOOL_MAP.get(tool_id)
         if not tool:
@@ -128,6 +154,8 @@ class ToolActionStore:
             "account_id": account_id,
             "tool_id": tool_id,
             "args": args,
+            "args_sha256": _args_hash(args),
+            "approved_args_sha256": None,
             "mutates_state": tool.mutates_state,
             "approval_required": tool.approval_required,
             "state": "awaiting_approval" if tool.approval_required else "ready",
@@ -158,9 +186,16 @@ class ToolActionStore:
         with self.lock:
             data = self._load()
             action = self._owned(data, account_id, action_id)
+            tool = TOOL_MAP.get(action.get("tool_id"))
+            if not tool or not self._integrity_matches(action, tool):
+                action["state"] = "tampered"
+                action["updated_at"] = self.now().isoformat()
+                self._save(data)
+                raise PermissionError("Tool action integrity check failed.")
             if not action.get("approval_required") or action.get("state") != "awaiting_approval":
                 raise ValueError("That tool action is not awaiting approval.")
             action["decision"] = decision
+            action["approved_args_sha256"] = action["args_sha256"] if decision == "approve" else None
             action["state"] = "ready" if decision == "approve" else "rejected"
             action["updated_at"] = self.now().isoformat()
             self._save(data)
@@ -171,13 +206,21 @@ class ToolActionStore:
         with self.lock:
             data = self._load()
             action = self._owned(data, account_id, action_id)
-            tool = TOOL_MAP.get(action["tool_id"])
-            if not tool:
-                raise ValueError("Tool definition is unavailable.")
+            tool = TOOL_MAP.get(action.get("tool_id"))
+            if not tool or not self._integrity_matches(action, tool):
+                action["state"] = "tampered"
+                action["updated_at"] = self.now().isoformat()
+                self._save(data)
+                raise PermissionError("Tool action integrity check failed.")
             if tool.permission and tool.permission not in set(permissions):
                 raise PermissionError("The signed-in role cannot use that tool.")
             if action["state"] != "ready":
                 raise PermissionError("Tool action is not approved and ready.")
+            if tool.approval_required and action.get("approved_args_sha256") != action.get("args_sha256"):
+                action["state"] = "tampered"
+                action["updated_at"] = self.now().isoformat()
+                self._save(data)
+                raise PermissionError("Approved tool arguments no longer match execution arguments.")
             try:
                 output = self._run(tool.tool_id, account, permissions, action["args"])
                 _bounded_json(output, MAX_OUTPUT_BYTES, "Tool output")
