@@ -1,13 +1,15 @@
 """Durable per-student Forge progression state."""
 
-from forge_student import StudentProgress
+from pathlib import Path
 import threading
 
+from forge_student import StudentProgress
 from runtime_document import RuntimeJSONDocument
 
 
 PROGRESS_FILENAME = "student_progress.json"
 PROGRESS_NAMESPACE = "student_progress"
+LEGACY_PROGRESS_FILE = Path(__file__).with_name(PROGRESS_FILENAME)
 MAX_PROGRESS_BYTES = 8_000_000
 MAX_STUDENTS = 2_000
 
@@ -23,6 +25,15 @@ def _validate_progress_data(data):
     return data
 
 
+def _is_live_path(path):
+    if path is None:
+        return True
+    try:
+        return Path(path).resolve() == LEGACY_PROGRESS_FILE.resolve()
+    except OSError:
+        return Path(path) == LEGACY_PROGRESS_FILE
+
+
 class ProgressStore:
     def __init__(self, path=None, database=None):
         self.persistence = RuntimeJSONDocument(
@@ -31,7 +42,7 @@ class ProgressStore:
             {"schema_version": 1, "students": {}},
             _validate_progress_data,
             MAX_PROGRESS_BYTES,
-            path=path,
+            path=None if _is_live_path(path) else path,
             database=database,
         )
         self.path = self.persistence.path
