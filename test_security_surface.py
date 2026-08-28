@@ -34,7 +34,12 @@ class SecuritySurfaceTests(unittest.TestCase):
                 if any(name.startswith(("urllib", "http", "socket", "requests")) for name in names):
                     network_files.add(path.name)
         self.assertEqual(process_files, {"app.py", "container_sandbox.py"})
-        self.assertEqual(network_files, {"api.py", "mobile_gateway.py", "model_adapter.py", "sad_clients.py"})
+        # Every network-capable production file is explicitly reviewed. sad_sdk.py is
+        # the Tier 2 local integration client and separately rejects non-loopback URLs.
+        self.assertEqual(
+            network_files,
+            {"api.py", "mobile_gateway.py", "model_adapter.py", "sad_clients.py", "sad_sdk.py"},
+        )
 
 
 if __name__ == "__main__":
