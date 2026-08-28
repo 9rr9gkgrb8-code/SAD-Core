@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from runtime_privacy import PRIVATE_RUNTIME_DIRECTORIES, PRIVATE_RUNTIME_FILES
+
 ROOT = Path(__file__).resolve().parent
 
 REQUIRED_PATHS = (
@@ -16,6 +18,7 @@ REQUIRED_PATHS = (
     "PLATFORM_SDK.md",
     "PLATFORM_TIER2_UAT.md",
     "PLATFORM_TIER3_UAT.md",
+    "PROTOCOL_BLACK.md",
     "SECURITY.md",
     "alpha.py",
     "alpha_doctor.py",
@@ -36,7 +39,10 @@ REQUIRED_PATHS = (
     "platform_clients.py",
     "platform_events.py",
     "platform_registry.py",
+    "protocol_black.py",
     "repair_planner.py",
+    "request_security.py",
+    "runtime_privacy.py",
     "sad_sdk.py",
     "sandbox.py",
     "start_mobile.ps1",
@@ -64,6 +70,7 @@ REQUIRED_PATHS = (
     "test_platform_tier2_api.py",
     "test_platform_tier3_api.py",
     "test_platform_ui.py",
+    "test_protocol_black.py",
     "test_sad_sdk.py",
     "test_tool_actions.py",
     "test_web_accessibility.py",
@@ -100,19 +107,8 @@ TEXT_SUFFIXES = {
     ".py", ".md", ".json", ".yml", ".yaml", ".txt", ".ps1",
     ".js", ".html", ".css", ".svg", ".webmanifest",
 }
-EXCLUDED_PARTS = {".git", ".sad_sandbox", ".sad_dev", "local_data", "__pycache__"}
-EXCLUDED_NAMES = {
-    "accounts.json",
-    "chat_history.json",
-    "dashboard_state.json",
-    "failures.json",
-    "memory.json",
-    "platform_clients.json",
-    "platform_events.json",
-    "settings.json",
-    "student_progress.json",
-    "tool_actions.json",
-}
+EXCLUDED_PARTS = {".git", *PRIVATE_RUNTIME_DIRECTORIES}
+EXCLUDED_NAMES = set(PRIVATE_RUNTIME_FILES)
 
 
 def iter_release_text_files(root: Path = ROOT):
