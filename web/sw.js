@@ -1,6 +1,6 @@
 "use strict";
-const CACHE_NAME="sad-forge-shell-v4";
-const SHELL=["/","/manifest.webmanifest","/ui/styles.css","/ui/owner_dashboard.css","/ui/chat.css","/ui/developer_workspace.css","/ui/platform.css","/ui/app.js","/ui/owner_dashboard.js","/ui/mobile.js","/ui/chat.js","/ui/developer_workspace.js","/ui/platform.js","/ui/icon.svg"];
+const CACHE_NAME="sad-forge-shell-v5";
+const SHELL=["/","/manifest.webmanifest","/ui/styles.css","/ui/owner_dashboard.css","/ui/chat.css","/ui/developer_workspace.css","/ui/platform.css","/ui/memory_tools.css","/ui/app.js","/ui/owner_dashboard.js","/ui/mobile.js","/ui/chat.js","/ui/developer_workspace.js","/ui/platform.js","/ui/memory_tools.js","/ui/icon.svg"];
 self.addEventListener("install",event=>{event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener("activate",event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE_NAME).map(key=>caches.delete(key)))).then(()=>self.clients.claim()))});
 self.addEventListener("fetch",event=>{
