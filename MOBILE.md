@@ -1,193 +1,152 @@
-# SAD + Forge Mobile Preview
+# SAD Mobile Preview
 
-SAD Mobile is an optional paired phone surface for the local-first Alpha. It does **not**
-make the core SAD API internet-facing. The normal API remains loopback-only; phones
-enter through a separate TLS-only gateway with an additional device-trust layer.
+SAD Mobile is the paired phone client for the local-first platform. It does **not** make
+the normal SAD Core API internet-facing. Core remains loopback-only; phones enter
+through a separate TLS-only gateway and must pass both device pairing and normal account
+sign-in.
 
-## What is implemented
+## Implemented phone surfaces
 
-- Responsive phone-first SAD + Forge browser UI
-- Free-form **SAD Chat** with durable per-account conversation history and follow-up context
-- **Voice Client Bridge** transcript route for signed-in phone conversations
-- **Code Workspace** shell for authorized Full Role development accounts
-- **SAD Platform** surface for authorized Full Role development accounts
-- Installable PWA metadata/service worker
-- iPhone/iPad home-screen and Android install support where browser/platform allows
-- Owner-created one-time 8-digit pairing codes, 5-minute expiry, single use
-- Pair-attempt rate limiting
-- 30-day paired-device credentials with Owner revocation
-- Device credential stored as a Secure, HttpOnly, SameSite=Strict cookie and hashed at rest
-- `learning` and `full_role` device modes
-- TLS 1.2+ requirement
-- Explicit private/approved-overlay IPv4 binding only
-- Mobile preflight doctor, combined desktop/mobile launcher, and Windows wrapper
-- Static-shell-only PWA caching; private `/v1/*` and `/mobile/*` traffic is never cached
+- SAD Chat with private durable conversations
+- Voice transcript bridge
+- Personal Memory
+- Governed personal Tool Actions
+- Personal Study
+- Forge learning and own progress
+- Code Workspace for authorized `full_role` development accounts
+- SAD Platform/Owner controls where normal account RBAC permits them
+- Installable PWA shell for iPhone/iPad and supported Android browsers
 
-## SAD Chat and Voice on a phone
+The phone is a client. Local AI generation, coding generation, repair generation, and
+Docker verification run on the host computer.
 
-SAD Chat is the normal conversation lane. Forge remains the game/tutoring lane.
+## Device trust
 
-The phone is a secure client. The host PC runs SAD and the configured local model.
-When the model is unavailable, SAD visibly uses the limited Built-in dialogue fallback.
+Owner creates a one-time 8-digit pairing code. Codes expire after five minutes, are
+single-use, and pairing attempts are throttled. Paired-device credentials expire after
+30 days, are revocable by Owner, are hashed at rest, and are delivered to the browser
+as a `Secure`, `HttpOnly`, `SameSite=Strict` cookie.
 
-`POST /v1/voice/turn` adds the first Voice transport contract. It accepts transcript
-text from a signed-in person, optionally continues an existing owned Chat session,
-and returns reply text plus `speech_text` for future local TTS.
+Pairing trusts the device. It does not create a SAD account session or grant a role.
 
-This milestone does **not** turn on direct browser microphone capture. The mobile
-security headers still set `microphone=()` because no browser STT/TTS trust boundary has
-been approved yet. A future native/browser speech client can convert speech to text and
-call the same Voice endpoint without changing SAD's conversation ownership model.
+## Learning mode
 
-Chat/Voice text does not grant repair, coding, app-management, approval, or Git authority.
+Use `learning` for student/family phones by default. The gateway admits only explicitly
+matched personal routes:
 
-## Code Workspace on a phone
-
-Code Workspace is available only through a `full_role` paired phone whose signed-in
-account already has development permissions.
-
-- **Owner:** plan/create/execute, inspect exact diff/tests, apply, rollback.
-- **Developer:** plan/create/execute/inspect, but no live apply/rollback.
-- **Reviewer / Viewer:** inspection only according to normal permissions.
-- **Student / Teacher:** no Code Workspace authority.
-
-Generation and Docker testing happen on the host, never on the phone.
-
-## Platform and local-app boundary on mobile
-
-Full Role Owner/development accounts may use the normal human **SAD Platform** UI and
-its normal RBAC-protected routes.
-
-However, Tier 2 `SAD-App` machine-client endpoints under `/v1/platform/client/*` are
-explicitly rejected by the mobile gateway in **both** device modes. Machine credentials
-are a loopback core API feature for local host integrations, not network credentials to
-be carried through the phone gateway.
-
-Owner app secrets and Platform event API responses are also excluded from PWA caching.
-
-## Authority model
-
-Pairing trusts a **device**. Signing in authorizes a **person**. Both gates are required.
-
-### Learning mode
-
-Default for student/family phones. The gateway permits only explicitly matched routes:
-
-- sign in / sign out / own password change
-- SAD Chat
-- Voice transcript turn
+- account sign-in/sign-out/own password change
+- SAD Chat and owned conversation history
+- Voice transcript turns
+- own Personal Memory create/list/search/update/delete
+- own governed Tool Action catalog/actions/decisions/execution
 - Personal Study
 - Forge quests/hints/completion
 - own Forge progress
 
-It blocks Code Workspace, dashboard, account administration, teacher roster, repair,
-Platform app administration, mobile-device administration, and all machine-client
-routes before normal SAD account RBAC is reached.
+Memory and Tool IDs remain account-owned after the device gate. Knowing another
+account's UUID does not grant access.
 
-### Full role mode
+Learning mode blocks:
 
-The paired phone may reach the normal **human** API surface, but SAD account permissions
-remain authoritative. Student remains Student; Developer cannot apply code; Owner gets
-Owner controls only after Owner login.
+- development dashboard
+- Developer Workspace
+- repair governance
+- account administration
+- teacher/admin rosters
+- mobile-device administration
+- Owner Platform administration
+- `SAD-App` machine-client endpoints
 
-Machine-client `/v1/platform/client/*` routes remain blocked even in Full Role mode.
+The gateway uses exact route patterns rather than broad `/v1/memory*` or `/v1/tools*`
+prefix admission.
 
-## Network boundary
+## Full role mode
 
-The mobile gateway refuses wildcard, loopback, public IPv4, and hostname bind values.
-It accepts explicit private RFC1918-style addresses and the `100.64.0.0/10` shared
-address range used by some private overlay networks.
+`full_role` admits normal human API routes after pairing, then SAD's existing account
+RBAC remains authoritative. A Developer still cannot perform Owner application. A
+Student remains a Student.
 
-**Do not port-forward the SAD mobile gateway to the public internet.**
+`/v1/platform/client/*` machine-client endpoints are blocked by the mobile gateway even
+in `full_role`. Scoped `SAD-App` credentials are intended for loopback machine-to-machine
+integrations on the host, not phone distribution.
 
-## TLS requirement
+## Memory on a phone
 
-A phone must connect over HTTPS with a certificate trusted by the phone and matching
-the address/name used to connect. SAD does not silently install a trust root.
+The **Memory & Tools** surface lets the signed-in person explicitly save, search,
+enable/disable, and delete personal memories. The API also supports category/content
+edits and optional expiry.
 
-Example configuration:
+SAD does not automatically turn normal conversation into long-term Memory. Enabled,
+non-expired entries may be supplied to the configured Local AI for Chat or Voice unless
+the request specifies `use_memory: false`.
 
-```text
-SAD_MOBILE_HOST=192.168.1.20
-SAD_MOBILE_PORT=8766
-SAD_MOBILE_CERT=C:\path\to\trusted-mobile-cert.pem
-SAD_MOBILE_KEY=C:\path\to\trusted-mobile-key.pem
-```
+If the full Local AI is unavailable and SAD falls back to Built-in dialogue, the
+response does not claim that saved Memory was used.
 
-Run:
+## Governed Tools on a phone
+
+Tier 3 tools are a fixed reviewed catalog:
+
+- `platform.status`
+- `memory.search`
+- `memory.remember`
+- `memory.forget`
+
+Read-only tools can enter `ready`. A state-changing tool starts
+`awaiting_approval`; the signed-in person must explicitly approve or reject it before
+execution. Rejected actions cannot execute.
+
+There is no generic shell, arbitrary URL/network request, dynamic plugin/Python loader,
+package installer, unrestricted filesystem action, or Git tool in Tier 3.
+
+## Voice
+
+`POST /v1/voice/turn` accepts transcript text and returns SAD reply text plus
+`speech_text` for a later local TTS client. It shares account-owned Chat history and the
+same optional Personal Memory context.
+
+Direct browser microphone capture/STT/TTS is not bundled yet. The mobile security
+policy still disables browser microphone access until that client trust boundary is
+implemented and tested.
+
+## Network and TLS boundary
+
+The mobile gateway requires TLS 1.2+ and one explicit private/approved-overlay IPv4
+binding. It refuses wildcard, loopback, hostname-as-bind-target, and public IPv4
+bindings.
+
+Do **not** router-port-forward the mobile gateway to the public internet. Public hosting,
+hosted identity/recovery, public TLS termination, and hosted secrets remain outside the
+Alpha boundary.
+
+Before phone use, configure the host address/certificate/key and require:
 
 ```text
 python mobile_doctor.py
-```
-
-Required result:
-
-```text
 MOBILE GATEWAY: READY
 ```
 
-## Start desktop + mobile together
+Then start:
 
 ```text
 python mobile.py
 ```
 
-This launches desktop/core UI at `http://127.0.0.1:8765/` and the paired gateway at
-`https://<SAD_MOBILE_HOST>:8766/`.
+The desktop/core UI remains on `http://127.0.0.1:8765/`; the phone uses the configured
+private HTTPS gateway.
 
-## Pair a phone
+## PWA privacy
 
-1. Sign in as Owner on the host.
-2. Open **Mobile Access**.
-3. Enter a phone label.
-4. Choose Learning only or Full signed-in role.
-5. Create the 5-minute pairing code.
-6. Open the trusted HTTPS mobile address on the phone.
-7. Enter the code and device name.
-8. Sign in with the person's normal SAD account.
-9. SAD Chat opens as the primary conversation view.
-10. Learning mode may use Chat, Voice transcript transport, Study, and Forge.
-11. Authorized Full Role development accounts can also use Platform/Code Workspace.
-12. Owner can revoke the phone at any time.
+The service worker may cache static shell assets including the Memory & Tools JS/CSS.
+It explicitly skips all `/v1/*` and `/mobile/*` traffic. Conversation text, Memory,
+Tool Actions, Study output, Forge data, coding diffs/tests, account records, repair
+evidence, sessions, pairing data, and credentials are therefore not stored in the PWA
+API cache.
 
-Revocation invalidates server-side device trust even if the browser still holds its
-cookie.
+## Acceptance
 
-## Install
-
-On iPhone/iPad Safari, use Share → Add to Home Screen. On supported Android Chromium
-browsers, use Install app/Add to Home Screen. Account sessions remain memory-only, so a
-server restart can require login again while device pairing remains valid.
-
-## Offline behavior
-
-The static app shell may open offline, but private functions require a live connection
-to the host. The service worker does not cache API responses, Chat/Voice text,
-Developer Workspace evidence, Platform manifests/events/app secrets, Study output,
-account/student data, repair evidence, Bearer sessions, pairing codes, or device
-credentials.
-
-## Automated mobile checks
-
-The suite verifies:
-
-- public/wildcard/loopback/hostname bind refusal
-- Learning exact-route isolation
-- Voice allowed for signed-in Learning phones
-- machine-client endpoint denial in Learning and Full Role modes
-- Full Role continuing to rely on human SAD RBAC
-- Developer-vs-Owner Code Workspace authority
-- pairing rate limiting, expiry, single use, hashing, and revocation
-- TLS material requirement
-- Owner-only pairing administration
-- PWA private-traffic cache exclusion
-- account-owned conversation isolation
-- phone touch/safe-area/narrow-screen rules
-
-## Current designation
-
-**Mobile Preview / Alpha companion surface.**
-
-Operational readiness still requires host-specific TLS/network proof and real phone UAT.
-Direct microphone capture, bundled speech-to-text/text-to-speech, and public-internet
-mobile hosting are not current Alpha claims.
+Mobile Preview remains a host/device claim, not only a code claim. Run the base mobile
+UAT plus `PLATFORM_TIER3_UAT.md` on the deployment computer and phone before calling
+Memory/Tools operational on that device. The key Tier 3 checks are account isolation,
+Memory disable/expiry, per-turn memory opt-out, mutating-tool approval, privileged-route
+denial, machine-route denial, and PWA cache privacy.
