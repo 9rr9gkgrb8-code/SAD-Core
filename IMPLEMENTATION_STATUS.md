@@ -4,6 +4,29 @@ Updated: August 27, 2026
 
 ## Completed
 
+- **SAD Platform Core v0.1-alpha** provides one versioned, declarative capability
+  registry for the local platform. Platform schema version is `1`; API remains `v1`.
+- Authenticated discovery endpoints (`/v1/platform`, `/v1/platform/modules`, and
+  `/v1/platform/capabilities`) expose only the modules/capabilities visible to the
+  signed-in role through the existing `ROLE_PERMISSIONS` map.
+- Current platform modules are SAD Platform Core, SAD Chat, Personal Study, Forge
+  Learning, Developer Workspace, Accounts & Roles, and Mobile Gateway.
+- Platform metadata is descriptive only: it cannot grant permissions, execute a
+  module, approve work, apply files, bypass Docker, or exercise Git authority.
+- Platform modules are declarative rather than dynamic plugins in Alpha. Describing or
+  registering module metadata cannot execute Python, browser JavaScript, shell
+  commands, install packages, or mutate Git/repository state.
+- The established public `/health` response remains backward-compatible. Platform
+  version/schema/authority metadata is available through the authenticated manifest.
+- A read-only **SAD Platform** browser surface displays the signed-in development
+  role's platform version, modules, capabilities, permission tags, mutation markers,
+  and human-approval boundaries without adding a generic invoke/plugin action.
+- Platform UI shell assets are installable with the PWA, while `/v1/*` platform
+  manifests remain explicitly excluded from service-worker caching.
+- Platform regression tests cover registry integrity, duplicate rejection, Student/
+  Viewer/Owner role filtering, authenticated discovery, manifest/catalog consistency,
+  backward-compatible health behavior, read-only UI behavior, responsive/accessibility
+  structure, and metadata-vs-authority separation.
 - Sandbox paths resolve under the proposal root; symlink and traversal targets are
   rejected. Live files and expanded Git topology are fingerprinted before/after.
 - Production automatic-code tests require a networkless, non-root, resource-limited
@@ -13,8 +36,9 @@ Updated: August 27, 2026
 - SAD↔Forge schema v1.0 includes request, correlation, job and artifact IDs;
   deterministic test plans; terminal states; hashed durable diff/test/diagnostic/
   receipt artifacts; and no Forge approval or merge authority.
-- Loopback HTTP/JSON API v1 provides health, login, SAD Chat, Developer Workspace,
-  failure, job, result, dashboard, Personal Study and Forge Student endpoints.
+- Loopback HTTP/JSON API v1 provides health, login, Platform discovery, SAD Chat,
+  Developer Workspace, failure, job, result, dashboard, Personal Study and Forge
+  Student endpoints.
 - SAD Chat provides a dedicated general-conversation lane separate from Forge and
   repair governance. It supports durable per-account sessions, new/history/archive,
   multi-turn recent context, and visible Local AI vs Built-in dialogue status.
@@ -69,10 +93,9 @@ Updated: August 27, 2026
   workspace state, changed paths, exact diff, test output, and role-filtered actions.
 - Full-role mobile devices preserve the same Developer Workspace RBAC: Developer can
   prepare/test but only Owner can apply. Learning-mode phones deny all coding-workspace
-  routes at the gateway.
-- Code Workspace static JS/CSS may be installed with the PWA shell, but all `/v1/*`
-  workspace API data, including diffs and test evidence, remains excluded from the
-  service-worker cache.
+  and privileged Platform routes at the gateway.
+- Code Workspace and Platform static JS/CSS may be installed with the PWA shell, but
+  all `/v1/*` workspace/platform data remains excluded from the service-worker cache.
 - Developer Workspace regression tests cover protected path handling, scope planning,
   stripped worktree, multi-file generation, failed-test blocking, stale/tamper checks,
   update/create/delete application, role separation, mobile denial, exact-diff UI,
@@ -113,7 +136,7 @@ Updated: August 27, 2026
   lockout, owner-controlled privileged account creation and no shared credential.
 - Mobile Preview includes a phone-first installable PWA shell, safe-area/touch
   layout, install hooks, online/offline status, and static-shell-only service-worker
-  caching. API, pairing, chat, coding-workspace and private data traffic are excluded.
+  caching. API, pairing, platform, chat, coding-workspace and private data traffic are excluded.
 - Mobile device trust uses Owner-generated one-time 8-digit codes, five-minute expiry,
   single-use consumption, pairing-attempt throttling, 30-day device expiry, and
   Owner revocation. Pairing codes/device tokens are hashed at rest.
@@ -124,8 +147,9 @@ Updated: August 27, 2026
   loopback-only. The gateway rejects wildcard, loopback, hostname, and public IPv4
   bindings and accepts one explicit private/approved overlay IPv4 address.
 - Mobile `learning` mode admits explicitly matched SAD Chat, account-self, Personal
-  Study, Forge play and own progress routes. Invented chat subroutes and Developer
-  Workspace routes do not pass the gateway. `full_role` mode defers to signed-in RBAC.
+  Study, Forge play and own progress routes. Invented chat subroutes, Platform
+  development routes, and Developer Workspace routes do not pass the gateway.
+  `full_role` mode defers to signed-in RBAC.
 - Owner Mobile Access UI can create temporary pairing codes, list paired phones, and
   revoke device access. Phones still require a normal SAD account login after pairing.
 - Mobile preflight (`mobile_doctor.py`), combined desktop/mobile launcher (`mobile.py`),
@@ -138,10 +162,10 @@ Updated: August 27, 2026
   route isolation, bind-address refusal, rate limiting, PWA install contract, API
   cache exclusion, and phone touch/safe-area requirements.
 - GitHub CI compiles the project, syntax-checks all browser JavaScript including SAD
-  Chat and Code Workspace, and runs the full test/contract/security suite.
+  Chat, Code Workspace, and SAD Platform, and runs the full test/contract/security suite.
 - The Alpha release gate is tested and enforced by CI; it verifies required release
-  surfaces and blocks retired private-mode implementation markers from returning to
-  the current release tree while excluding private `.sad_dev` runtime artifacts.
+  surfaces including Platform Core and blocks retired private-mode implementation
+  markers from returning while excluding private `.sad_dev` runtime artifacts.
 - Alpha operator preflight reports core readiness separately from optional local-model
   configuration and Docker-backed automatic-code isolation readiness.
 - GitHub Actions performs a real Docker isolation proof after the core gate. The
@@ -150,19 +174,32 @@ Updated: August 27, 2026
   through `DockerSandboxRunner` with the production boundary. The proof verifies
   non-root execution, a read-only workspace, writable tmpfs, stripped GitHub
   credentials, and unavailable external networking.
-- Alpha browser UI provides SAD Chat and Code Workspace plus role-filtered Personal
-  Study, Forge Student, teacher roster, Owner/Dev dashboard, account control, mobile
-  control, and security surfaces.
+- Alpha browser UI provides SAD Chat, SAD Platform, and Code Workspace plus
+  role-filtered Personal Study, Forge Student, teacher roster, Owner/Dev dashboard,
+  account control, mobile control, and security surfaces.
 - Browser accessibility structure has automated regression checks for form labels,
   keyboard order, visible focus, live announcements, navigation semantics, data-table
-  captions/column scopes, SAD Chat controls, and Code Workspace status/actions.
+  captions/column scopes, SAD Chat controls, Platform status/module presentation, and
+  Code Workspace status/actions.
 - A role-by-role `ALPHA_UAT.md` protocol defines owner, student, teacher, developer,
-  reviewer, viewer, SAD Chat, Developer Workspace, mobile, security, accessibility,
-  severity, stop, and Alpha-exit criteria.
+  reviewer, viewer, Platform Core, SAD Chat, Developer Workspace, mobile, security,
+  accessibility, severity, stop, and Alpha-exit criteria.
 - Personal Study can generate full output through the explicitly configured
   loopback-only local model and reports honestly when the model is unavailable.
 - Account lifecycle includes owner listing/disable controls, self-service password
   changes, logout, and revocation of other sessions after password change.
+
+## Architecture direction
+
+SAD is the platform. Forge, Chat, Study, Mobile, repair, and Developer Workspace are
+modules/clients/capabilities within that governed SAD platform boundary.
+
+A prior Protocol White audit stopped at its legacy Gate 2 because that historical
+protocol required an independently scaffolded `Forge-Core` repository/service. That
+audit result remains recorded and was not reclassified as a pass. Under the current
+SAD-as-platform direction, the separate-Forge requirement is **paused** rather than an
+Alpha/Platform Core release dependency. Re-activating the independent-Forge topology
+would require an explicit architecture decision and a new/resumed Protocol White run.
 
 ## Remaining operational work
 
@@ -173,40 +210,52 @@ Updated: August 27, 2026
   Chat can fall back to built-in dialogue without it, but full AI conversation,
   automatic repair drafting, Developer Workspace scope planning, and multi-file coding
   require the intended local model to be healthy and capable of the strict JSON contract.
+- Execute Platform Core human UAT on the actual host: compare Owner/Developer/Reviewer/
+  Viewer/Teacher/Student manifests, prove metadata cannot bypass concrete endpoint
+  RBAC, confirm no runtime private data appears, and verify the read-only dashboard at
+  keyboard, screen-reader, zoom, and narrow viewport sizes.
 - Execute Developer Workspace human UAT on the actual host with a disposable/backed-up
   project state: scope review, real multi-file generation, Docker tests, exact diff,
   Owner apply, stale/tamper denial, automatic rollback, explicit rollback, and Git
   topology unchanged.
 - Execute the broader controlled human UAT protocol with representative student,
-  teacher, owner, developer, reviewer, and viewer accounts, including SAD Chat and
-  Developer Workspace authority-boundary scenarios. Human pilot evidence is not yet
-  claimed complete.
+  teacher, owner, developer, reviewer, and viewer accounts, including Platform Core,
+  SAD Chat, and Developer Workspace authority-boundary scenarios. Human pilot evidence
+  is not yet claimed complete.
 - Perform the manual keyboard, screen-reader, 200% zoom, and narrow-viewport checks
   in `ALPHA_UAT.md`; automated structural accessibility checks do not replace them.
 - For Mobile Preview, provision a phone-trusted TLS certificate/key on the Windows
   deployment host, choose the explicit private bind address, and require
   `python mobile_doctor.py` → `MOBILE GATEWAY: READY`.
 - Run mobile host/phone UAT: pairing, repeated invalid-code throttling, revocation,
-  SAD Chat continuity, learning-mode denial of coding/admin/development routes,
-  full-role Code Workspace RBAC, iPhone/Android install/home-screen behavior,
-  reconnect behavior, and narrow-screen usability.
+  SAD Chat continuity, learning-mode denial of Platform/coding/admin/development
+  routes, full-role Platform/Code Workspace RBAC, iPhone/Android install/home-screen
+  behavior, reconnect behavior, and narrow-screen usability.
 - Account sessions are intentionally memory-only and require login again after API
   restart. Conversation and Developer Workspace state are durable on the host.
+- Platform Core is declarative only. Dynamic third-party plugin execution, scoped
+  machine-to-machine credentials, event/subscription APIs, capability deprecation
+  negotiation, and voice-client integration remain future platform milestones.
 - Public internet hosting remains deliberately unsupported for Alpha 1. The mobile
   preview must not be router-port-forwarded; public TLS termination, hosted secrets,
   email recovery, and external identity remain future work.
 
 ## Verification gate
 
-Run `python -m unittest -v`, `python -m compileall -q .`, `python release_gate.py`,
-`python alpha_doctor.py`, and Protocol White. Automatic repair and Developer Workspace
-readiness also require `python docker_proof.py` with the reviewed digest-pinned sandbox
-image on the deployment host. Mobile Preview readiness also requires
-`python mobile_doctor.py` with the deployment host's actual private address/trusted TLS
-material, then the phone-specific UAT in `MOBILE.md`.
+For the current SAD-as-platform Alpha, run `python -m unittest -v`,
+`python -m compileall -q .`, `python release_gate.py`, and `python alpha_doctor.py`.
+Automatic repair and Developer Workspace readiness also require
+`python docker_proof.py` with the reviewed digest-pinned sandbox image on the deployment
+host. Mobile Preview readiness additionally requires `python mobile_doctor.py` with the
+deployment host's actual private address/trusted TLS material, then the phone-specific
+UAT in `MOBILE.md`.
+
+Protocol White's historical independent-Forge Gate 2 remains an architecture audit
+record, not the current SAD Platform Core exit gate, unless that topology is explicitly
+reactivated.
 
 A release is blocked if any core test fails, the worktree is dirty unexpectedly, the
 release-integrity gate fails, container isolation is unavailable for automatic code,
-a tested-code source/hash boundary fails, or live/Git integrity evidence fails. Mobile
-Preview must remain disabled when its own preflight is blocked; that does not weaken
-or expose the base loopback Alpha surface.
+a tested-code source/hash boundary fails, Platform role filtering leaks authority, or
+live/Git integrity evidence fails. Mobile Preview must remain disabled when its own
+preflight is blocked; that does not weaken or expose the base loopback Alpha surface.

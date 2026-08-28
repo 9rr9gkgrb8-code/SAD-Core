@@ -8,6 +8,7 @@
   const SURFACE_ASSETS={
     chat:{css:"/ui/chat.css",js:"/ui/chat.js"},
     developer_workspace:{css:"/ui/developer_workspace.css",js:"/ui/developer_workspace.js"},
+    platform:{css:"/ui/platform.css",js:"/ui/platform.js"},
   };
 
   function headers(){return {}}
@@ -93,6 +94,7 @@
   }
   loadSurface("chat");
   loadSurface("developer_workspace");
+  loadSurface("platform");
 
   window.SADMobile={remote,headers,ensurePaired,handleApiError,forgetDevice};
 })();

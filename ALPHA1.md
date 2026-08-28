@@ -34,6 +34,9 @@ Each person receives a separate credential. Students never see developer control
 
 ## Included surfaces
 
+- **SAD Platform Core** with a versioned, role-filtered module/capability registry and
+  read-only Platform dashboard. Clients can discover what the signed-in role may use
+  without Platform metadata granting any authority.
 - **SAD Chat** as the default free-form conversation lane, with durable per-account
   conversations, new/archive/history controls, recent-turn context, and visible
   `Local AI` versus `Built-in dialogue` response status
@@ -59,6 +62,28 @@ Each person receives a separate credential. Students never see developer control
   revocable paired-device trust, learning-only/full-role modes, SAD Chat, and a
   TLS-only private gateway while the core API stays on loopback
 - Password change and session revocation
+
+## Platform Core boundary
+
+Platform Core is the common contract joining SAD's existing capabilities into one
+platform. It does not create a second authority system.
+
+- `/v1/platform`, `/v1/platform/modules`, and `/v1/platform/capabilities` require a
+  valid SAD account session.
+- The registry filters modules/capabilities through the same `ROLE_PERMISSIONS` map
+  used by the live API.
+- A client may use the catalog to decide what to render, but concrete endpoint
+  authorization remains authoritative.
+- Platform metadata cannot create accounts, invoke code, approve repairs, apply files,
+  bypass Docker, or exercise Git authority.
+- Platform modules are declarative in Alpha. Registering/describing a module does not
+  dynamically execute extension code.
+- The established public `/health` response remains backward-compatible; the separate
+  platform version is exposed in the signed-in Platform manifest.
+- Future voice, desktop, mobile, and local-app clients should consume this common
+  discovery contract rather than inventing independent feature/permission maps.
+
+See `PLATFORM.md` for the detailed module and client contract.
 
 ## SAD Chat boundary
 
@@ -128,22 +153,24 @@ paired-device credential and then the person must sign in through the normal SAD
 authentication system.
 
 `learning` mode allows SAD Chat plus account-self, Personal Study, Forge play, and own
-progress through an explicit route allow-list. Developer Workspace is blocked.
-`full_role` mode allows the normal route surface, but the signed-in account still has
-exactly its existing SAD permissions. A Developer on a full-role phone can prepare
-and test code but cannot apply it; Owner authority is still required. Device
-credentials are revocable and kept from browser JavaScript in a
-Secure/HttpOnly/SameSite=Strict cookie.
+progress through an explicit route allow-list. Developer Workspace and development
+Platform administration surfaces are blocked. `full_role` mode allows the normal
+route surface, but the signed-in account still has exactly its existing SAD
+permissions. A Developer on a full-role phone can prepare and test code but cannot
+apply it; Owner authority is still required. Device credentials are revocable and
+kept from browser JavaScript in a Secure/HttpOnly/SameSite=Strict cookie.
 
-The mobile service worker never caches API, pairing, chat, coding-workspace, student,
-account, repair, session, or device-credential traffic.
+The mobile service worker may cache Platform UI shell assets but never caches API,
+pairing, platform manifests, chat, coding-workspace, student, account, repair,
+session, or device-credential traffic.
 
 ## Acceptance
 
 Before widening a local pilot, run the scenarios in `ALPHA_UAT.md`. They cover every
-role, SAD Chat account isolation, Developer Workspace scope/test/apply separation,
-security boundaries, keyboard and screen-reader use, zoom/mobile layout, stop
-conditions, and the evidence required before calling a candidate Alpha-ready.
+role, Platform role-filtering/authority separation, SAD Chat account isolation,
+Developer Workspace scope/test/apply separation, security boundaries, keyboard and
+screen-reader use, zoom/mobile layout, stop conditions, and the evidence required
+before calling a candidate Alpha-ready.
 
 Automated accessibility checks run with the normal unit suite, but they are a
 regression net rather than a substitute for the manual accessibility pass.
@@ -178,6 +205,10 @@ The core Alpha remains a local-first product. The normal SAD API deliberately re
 non-loopback binding. The optional Mobile Preview is a separate paired TLS gateway
 restricted to an explicit private/approved overlay address; it must not be
 port-forwarded to the public internet.
+
+Platform Core does not add public hosting, dynamic plugin execution, unattended
+machine credentials, hosted identity, or an internet marketplace. Those remain future
+platform work behind separate security contracts.
 
 Public internet hosting, hosted TLS termination, email recovery, federation/external
 identity, and hosted secret management remain outside Alpha.

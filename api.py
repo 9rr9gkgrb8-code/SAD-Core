@@ -7,13 +7,14 @@ from pathlib import Path
 import re
 import mimetypes
 
-from auth import AuthService
+from auth import AuthService, ROLE_PERMISSIONS
 from conversation import ConversationStore, generate_chat_reply
 from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
+from platform_registry import PlatformRegistry
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from study_generator import generate_study_result
@@ -27,7 +28,7 @@ MAX_REQUEST_BYTES = 2_000_000
 class SadApiService:
     def __init__(
         self, auth=None, dashboard=None, progress=None, mobile_access=None,
-        conversations=None, developer_workspaces=None,
+        conversations=None, developer_workspaces=None, platform=None,
     ):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
@@ -35,6 +36,7 @@ class SadApiService:
         self.mobile_access = mobile_access or MobileAccessStore()
         self.conversations = conversations or ConversationStore()
         self.developer_workspaces = developer_workspaces or DeveloperWorkspaceStore()
+        self.platform = platform or PlatformRegistry()
 
     def token(self, headers):
         value = headers.get("Authorization", "")
@@ -54,6 +56,7 @@ class SadApiService:
         token = self.token(headers)
         account = self.auth.require(token)
         account_id = account["account_id"]
+        permissions = ROLE_PERMISSIONS[account["role"]]
         if method == "GET" and path == "/v1/auth/me":
             return 200, {"account": account, "profile": self.auth.get_profile(token)}
         if method == "POST" and path == "/v1/auth/logout":
@@ -62,6 +65,13 @@ class SadApiService:
         if method == "POST" and path == "/v1/auth/password":
             self.auth.change_password(token, body.get("current_password", ""), body.get("new_password", ""))
             return 200, {"changed": True}
+
+        if method == "GET" and path == "/v1/platform":
+            return 200, self.platform.manifest(account["role"], permissions, API_VERSION)
+        if method == "GET" and path == "/v1/platform/capabilities":
+            return 200, {"capabilities": self.platform.catalog(permissions)}
+        if method == "GET" and path == "/v1/platform/modules":
+            return 200, {"modules": self.platform.visible_modules(permissions)}
 
         if method == "GET" and path == "/v1/chat/sessions":
             return 200, {"sessions": self.conversations.list_sessions(account_id)}

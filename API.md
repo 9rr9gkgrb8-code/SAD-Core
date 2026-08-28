@@ -10,11 +10,14 @@ the normal SAD API remains on loopback.
 
 ## Core endpoints
 
-- `GET /health`
+- `GET /health` — established minimal `{status, api_version}` health contract
 - `POST /v1/auth/login`
 - `GET /v1/auth/me`
 - `POST /v1/auth/logout`
 - `POST /v1/auth/password`
+- `GET /v1/platform` — signed-in role-filtered SAD platform manifest and platform version
+- `GET /v1/platform/modules` — modules visible to the signed-in role
+- `GET /v1/platform/capabilities` — flattened capability catalog visible to the signed-in role
 - `GET /v1/chat/sessions` — list the signed-in account's active conversations
 - `POST /v1/chat/sessions` — start a new conversation
 - `GET /v1/chat/sessions/{session_id}` — load one owned conversation
@@ -48,6 +51,25 @@ the normal SAD API remains on loopback.
 - `POST /v1/jobs/{work_item_id}/result`
 - `POST /v1/jobs/{work_item_id}/decision`
 - `POST /v1/jobs/{work_item_id}/close`
+
+## Platform Core semantics
+
+Platform Core gives SAD clients one stable discovery surface for Chat, Study, Forge,
+Developer Workspace, repair governance, accounts, Mobile, and future modules.
+
+The detailed platform endpoints require a valid SAD login. Their output is filtered by
+the signed-in role's existing permission set. A Student does not receive Owner coding
+or account-management capabilities; a Viewer receives development visibility but not
+work/govern authority; an Owner receives the full Alpha role-permitted catalog.
+
+Platform metadata is descriptive only. A returned capability does not authorize its
+route. The concrete route performs its normal authentication, permission, workflow,
+source-hash, isolation, and human-approval checks independently.
+
+The platform manifest reports this boundary explicitly through
+`platform_metadata_grants_authority: false` and `git_authority: human_host_only`.
+
+See `PLATFORM.md` for module/capability shapes and client integration rules.
 
 ## SAD Chat semantics
 
@@ -138,14 +160,15 @@ creates a user session and never substitutes for SAD role authorization.
 
 ### Mobile device modes
 
-- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix. Developer Workspace routes are denied.
+- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix. Developer Workspace and Platform development surfaces are denied.
 - `full_role`: the gateway admits the normal API surface, then SAD's existing RBAC
-  decides what the signed-in role may actually do. An Owner can use Code Workspace;
-  a Developer can prepare/test but still cannot apply; lower roles retain their limits.
+  decides what the signed-in role may actually do. An Owner can use Code Workspace
+  and the read-only Platform dashboard; a Developer can prepare/test but still cannot
+  apply; lower roles retain their limits.
 
 The device credential is hashed at rest and is never available to browser JavaScript.
-The service worker excludes `/v1/*` and `/mobile/*` traffic, including conversation
-and Developer Workspace API data, from caching.
+The service worker excludes `/v1/*` and `/mobile/*` traffic, including conversation,
+platform discovery, and Developer Workspace API data, from caching.
 
 ### Repair decision semantics
 

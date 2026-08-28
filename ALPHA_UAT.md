@@ -25,8 +25,9 @@ Before a pilot session:
   binding, unapproved live code application, local-data loss, or cross-account
   private-data exposure. Stop the pilot immediately.
 - **High:** a core role cannot complete its primary workflow, security controls fail
-  closed incorrectly, a tested-code integrity boundary is bypassed, or accessibility
-  prevents keyboard/screen-reader completion. Alpha release is blocked.
+  closed incorrectly, a tested-code integrity boundary is bypassed, Platform discovery
+  exposes or grants unauthorized authority, or accessibility prevents keyboard/screen-reader
+  completion. Alpha release is blocked.
 - **Medium:** workflow is usable but confusing, inconsistent, or requires an
   undocumented workaround. Fix or explicitly accept before widening the pilot.
 - **Low:** cosmetic or wording issue with no material workflow impact.
@@ -44,8 +45,45 @@ for every accepted Medium finding.
   approve or reject the result, and close the workflow.
 - Complete the Developer Workspace Owner scenarios below, including exact-diff review,
   multi-file application, and rollback.
+- Complete the Platform Core scenarios below and confirm Owner discovery describes but
+  does not itself execute governance actions.
 - Confirm every authority-changing action requires the expected human role and explicit action.
 - Change the owner password and confirm other sessions are revoked.
+
+## Platform Core acceptance
+
+Run the discovery checks with Owner, Developer, Reviewer, Viewer, Teacher, and Student.
+
+- Without a valid SAD session, request `/v1/platform`, `/v1/platform/modules`, and
+  `/v1/platform/capabilities`; require authentication denial.
+- Confirm the established public `/health` response remains exactly the existing
+  `{status, api_version}` contract.
+- Sign in as Owner and open **SAD Platform**. Confirm the manifest reports the platform
+  version, API version, visible module count, capability count, and authority model.
+- Confirm Owner discovery includes the governed Developer Workspace and account
+  administration capabilities expected from the current Owner role.
+- Sign in as Developer and confirm discovery includes development work but omits
+  `development:govern` and account-management authority.
+- Sign in as Reviewer and confirm discovery includes only review/decision capabilities
+  already present in the Reviewer role map, not Developer execution or Owner governance.
+- Sign in as Viewer and confirm discovery exposes `development:view` but not
+  `development:work`, `development:decide`, or `development:govern`.
+- Sign in as Student and confirm discovery includes SAD Chat, Personal Study, Forge,
+  own progress, and Platform discovery while omitting privileged development/account
+  capabilities.
+- Sign in as Teacher and confirm discovery reflects Teacher-only student-progress and
+  allowed student-account capabilities without privileged development authority.
+- Compare `/v1/platform/modules` and `/v1/platform/capabilities` for the same account;
+  require that the flattened capability IDs match exactly.
+- Confirm the Platform dashboard itself performs read-only GET discovery and presents
+  no generic “invoke capability” or “run plugin” action.
+- Attempt a concrete forbidden endpoint after learning its route from documentation or
+  another role. Require the concrete endpoint's RBAC denial. Platform metadata must
+  never act as a permission token.
+- Confirm no account data, chat transcript, failure evidence, pairing secret, workspace
+  source, environment value, or other runtime private data is embedded in the manifest.
+- Confirm registering/describing a platform module cannot dynamically execute Python,
+  JavaScript, shell, package installation, or Git operations.
 
 ## SAD Chat acceptance
 
@@ -112,7 +150,7 @@ Use a disposable/backed-up project state for the first live-application exercise
 
 ## Student acceptance
 
-- Sign in with a student credential and confirm owner/development/Code Workspace controls are absent.
+- Sign in with a student credential and confirm owner/development/Code Workspace/Platform-admin controls are absent.
 - Use SAD Chat for a normal multi-turn conversation and confirm the Student cannot gain admin/repair/coding authority through chat.
 - Use Personal Study for explanation, method teaching, walkthrough, work checking,
   hints, proofreading, essay editing, rubric review, an example, and word-count expansion.
@@ -131,23 +169,23 @@ Use a disposable/backed-up project state for the first live-application exercise
 
 ## Developer acceptance
 
-- Confirm the developer sees the shared development dashboard and Code Workspace but not owner account administration.
+- Confirm the developer sees the shared development dashboard, Code Workspace, and read-only SAD Platform catalog but not owner account administration.
 - Confirm the developer cannot perform owner-only push, final repair governance, Code Workspace apply/rollback, or account authority actions.
 - Prepare and execute an approved Code Workspace and inspect its exact diff/test evidence.
 - Where permitted, execute repair work only after required owner isolation approval.
-- Confirm Forge/coding evidence does not grant merge, credential, or approval authority.
+- Confirm Forge/coding/platform metadata does not grant merge, credential, or approval authority.
 
 ## Reviewer acceptance
 
-- Confirm the reviewer can inspect/review the appropriate failure/result states and inspect Code Workspace evidence.
+- Confirm the reviewer can inspect/review the appropriate failure/result states, inspect Code Workspace evidence, and read the role-filtered SAD Platform catalog.
 - Confirm the reviewer cannot create/execute Code Workspaces, create privileged accounts, or bypass owner push/isolation/application boundaries.
 - Verify repair approve/reject decisions are recorded and visible after restart.
 
 ## Viewer acceptance
 
-- Confirm the viewer receives read-only development and Code Workspace visibility.
+- Confirm the viewer receives read-only development, Code Workspace, and Platform visibility.
 - Attempt each available mutation path and require denial.
-- Confirm no student-private, account-secret, chat-history, or workspace-private absolute-path material appears in the viewer surface.
+- Confirm no student-private, account-secret, chat-history, workspace-private absolute-path, or private runtime material appears in the viewer Platform surface.
 
 ## Mobile Preview acceptance
 
@@ -179,7 +217,9 @@ Run this section on every phone/browser combination that will be claimed as supp
 - Open SAD Chat, continue a multi-turn conversation, start a second chat, switch between them, and archive one.
 - Confirm the phone shows **Local AI** when the host model is available and **Built-in dialogue** when it is not.
 - Complete Personal Study and Forge quest/hint/mastery/progress workflows.
-- Attempt Code Workspace, dashboard, account, teacher-roster, mobile-admin, failure, and repair routes; require denial at the gateway even if a higher-authority account token is supplied.
+- Attempt Platform catalog, Code Workspace, dashboard, account, teacher-roster,
+  mobile-admin, failure, and repair routes; require denial at the gateway even if a
+  higher-authority account token is supplied.
 - Attempt invented chat subroutes such as `/repair` and require denial, proving the gateway allow-list is exact rather than prefix-wide.
 
 ### Full-role phone
@@ -188,20 +228,20 @@ Run this section on every phone/browser combination that will be claimed as supp
 - Sign in separately as Student, Teacher, Reviewer, Developer, Viewer, and Owner where practical.
 - Confirm every role has the same authority it has on desktop, no more and no less.
 - Specifically confirm a Student on a full-role paired phone still cannot reach Owner/Code Workspace controls.
-- As Developer, confirm Code Workspace planning/execution works but live apply is denied.
-- As Owner, inspect a passing Code Workspace diff and verify Owner apply is available only after the same test/hash gates as desktop.
+- As Developer, confirm Code Workspace planning/execution works but live apply is denied and Platform discovery omits Owner governance.
+- As Owner, open **SAD Platform**, inspect the role-filtered catalog, inspect a passing Code Workspace diff, and verify Owner apply is available only after the same test/hash gates as desktop.
 - Confirm Owner repair approval still requires the same Forge evidence and repair-state boundaries.
 
 ### PWA / install behavior
 
 - On iPhone/iPad Safari, add SAD Forge to the home screen and launch it standalone.
 - On Android, use the browser install/add-to-home-screen flow and launch standalone.
-- Confirm SAD Chat and Code Workspace (for an authorized full-role account) open cleanly in standalone mode and controls are not hidden by the keyboard/home indicator.
+- Confirm SAD Chat, SAD Platform (for authorized full-role development accounts), and Code Workspace open cleanly in standalone mode and controls are not hidden by the keyboard/home indicator.
 - Confirm safe-area padding prevents controls from hiding under notches/home indicators.
 - Confirm all primary touch controls have comfortable tap targets and forms do not trigger unwanted zoom.
 - Toggle phone connectivity and confirm the UI reports offline status.
 - Confirm an offline shell may open but private/API functionality fails safely until the host is reachable.
-- Confirm no prior chat text, Developer Workspace diff/test data, study output, account data, student record, repair evidence, session token, pairing code, or device credential is available from the service-worker cache.
+- Confirm no prior platform manifest, chat text, Developer Workspace diff/test data, study output, account data, student record, repair evidence, session token, pairing code, or device credential is available from the service-worker cache.
 
 ## Security acceptance
 
@@ -212,6 +252,9 @@ Run this section on every phone/browser combination that will be claimed as supp
 - Verify repeated incorrect passwords trigger temporary lockout.
 - Verify logout invalidates the active account session.
 - Verify password change revokes other account sessions.
+- Attempt unauthenticated Platform discovery and require refusal.
+- Compare Platform manifests across roles and require privileged capabilities to be absent from lower-authority catalogs.
+- Use a lower-authority token against a privileged concrete route even when its route is known; require normal RBAC refusal.
 - Attempt cross-account chat access by known session ID and require refusal/not-found.
 - Attempt Developer Workspace scope traversal/protected paths and require refusal.
 - Attempt Developer Workspace apply as Developer/Reviewer/Viewer and require refusal.
@@ -228,6 +271,7 @@ Perform the following on login and every role-visible view:
 - Confirm view changes move focus to the new view heading and expose the selected navigation item as current.
 - With a screen reader, confirm login errors are announced immediately and normal status updates/generated outputs are announced without stealing control.
 - In SAD Chat, confirm the conversation log, New conversation, Archive, history list, composer label, and Send control are understandable.
+- In SAD Platform, confirm the heading, refresh control, version/module/capability summary, authority boundary, module cards, permission tags, and status text are understandable without color alone.
 - In Code Workspace, confirm task/scope fields, workspace list, state, exact diff, test output, and action buttons have understandable labels/status announcements.
 - Confirm every input, select, and textarea has an understandable accessible label.
 - Confirm data tables announce a meaningful caption and column headers.
@@ -256,6 +300,7 @@ A candidate may be called **Alpha-ready for a controlled local pilot** when:
 
 - CI, full tests, release integrity, and operator preflight are green;
 - every required desktop role boundary above passes;
+- Platform Core role-filtering and metadata-vs-authority scenarios pass;
 - SAD Chat account isolation and authority-boundary scenarios pass;
 - Developer Workspace scope/test/application/rollback boundaries pass if general coding is claimed;
 - the accessibility acceptance pass has no blocking finding;
