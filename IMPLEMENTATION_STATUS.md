@@ -2,270 +2,157 @@
 
 Updated: August 27, 2026
 
-## Current architecture
+## Architecture direction
 
-**SAD is the platform.** SAD Chat, Voice, Personal Study, Forge Learning, Developer
-Workspace, controlled repair, accounts/roles, and Mobile are governed SAD platform
-surfaces. Forge is not required to become a separate repository for the current Alpha
-architecture.
+**SAD is the platform.** Chat, Voice, Personal Study, Forge Learning, Personal Memory,
+Governed Tool Actions, Developer Workspace, controlled repair, accounts/roles, Mobile,
+scoped local-app credentials, and platform events are governed SAD modules/clients.
 
-A prior Protocol White run remains truthfully recorded as blocked at its historical
-Gate 2 because that legacy protocol expected an independent `Forge-Core` service. That
-separate-service topology is paused under the current SAD-as-platform direction, not
-retroactively marked as passing.
+The historical Protocol White audit remains recorded as blocked at its old independent
+`Forge-Core` Gate 2. That separate-service topology is paused under the current
+SAD-as-platform architecture and was not retroactively marked as passing.
 
-## Platform milestone
+## Current platform milestone
 
-Current Platform Core version: **`0.2-alpha`**
+- Platform Core: **`0.3-alpha`**
+- Platform manifest schema: **`3`**
+- HTTP API: **`v1`**
+- Core network binding: **loopback only**
+- Dynamic plugin execution: **disabled**
+- AI Git authority: **none**
 
-Platform manifest schema: **`2`**
+## Completed platform capabilities
 
-Core API contract: **`v1`**
+### Core/discovery
 
-### Platform Core completed
+- Role-filtered `/v1/platform`, `/modules`, `/capabilities`, and compatibility negotiation.
+- Capability version/lifecycle metadata.
+- Backward-compatible minimal `/health` contract.
+- Read-only Platform dashboard.
 
-- One declarative `PlatformRegistry` describes SAD modules, capabilities, routes,
-  permissions, state mutation, human approval boundaries, capability versions, and
-  lifecycle state.
-- Human discovery endpoints are authenticated and role-filtered:
-  - `GET /v1/platform`
-  - `GET /v1/platform/modules`
-  - `GET /v1/platform/capabilities`
-  - `POST /v1/platform/compatibility`
-- `/health` keeps its established minimal `{status, api_version}` response for backward
-  compatibility.
-- Capability compatibility negotiation reports availability/version only within the
-  requesting principal's existing authority. Hidden capabilities remain unavailable.
-- Dynamic extension/plugin execution remains disabled. Platform metadata cannot execute
-  Python/JavaScript/shell code, install packages, or mutate Git.
-- SAD Platform browser surface shows module/capability versions, lifecycle, permission,
-  mutation, and human-approval markers.
+### Conversation and Voice
 
-### Tier 2 local-app identity completed
+- Private durable per-account Chat sessions with multi-turn context.
+- Visible Local AI vs Built-in dialogue engine status.
+- Transcript-based Voice bridge using the same account-owned Chat history.
+- Voice returns text suitable for a future local TTS client.
 
-- Owner-only `platform:manage` controls local machine-client registration.
-- Machine credentials use a distinct `SAD-App <client-id>.<secret>` scheme and never
-  become human Bearer sessions.
-- Allowed machine scopes are deliberately limited to:
-  - `platform:discover`
-  - `platform:catalog`
-  - `platform:modules`
-  - `platform:compatibility`
-  - `platform:events`
-- App secrets are high-entropy, returned only at creation/rotation, salted/hashed at
-  rest, rotatable, and revocable.
-- Listing an app never returns its live secret, hash, or salt.
-- Unknown or duplicate scopes fail closed.
-- Machine clients cannot Chat, use Voice, Study, play Forge, run/apply Developer
-  Workspace, approve/apply repairs, administer accounts/devices, or perform Git work.
-- Machine endpoints stay on the loopback core API under `/v1/platform/client/*`.
-- The mobile gateway rejects the machine-client endpoint family even for Full Role
-  paired devices.
-- `platform_clients.json` is private Git-ignored runtime data and excluded from release
-  source scanning.
+### Personal Memory
 
-### Tier 2 platform events completed
+- Explicit per-account durable `memory.json` store.
+- Categories: fact, preference, goal, project, note.
+- Create/list/search/edit/enable/disable/expiry/delete.
+- Cross-account memory access fails closed.
+- Only enabled, non-expired memory may enter Local AI Chat/Voice context.
+- Per-turn `use_memory: false` excludes saved Memory.
+- Built-in dialogue never reports saved Memory use.
+- Memory is Git-ignored and excluded from release-source scanning.
 
-- `PlatformEventStore` provides a bounded durable metadata-only event stream with
-  monotonic sequence numbers and cursors.
-- Exact Owner-approved event subscriptions are stored per app.
-- Empty subscription means no events, never all events.
-- Unknown event types fail closed.
-- Current event types cover Chat session/message metadata, Developer Workspace state,
-  failures, Forge quest lifecycle, app credential lifecycle, and Voice turn completion.
-- Event payloads deliberately omit conversation text, prompts, generated code, diffs,
-  passwords, tokens, app/device secrets, student work, and other high-value payloads.
-- Event details and total history are size-bounded.
-- `platform_events.json` is private Git-ignored runtime data and excluded from release
-  source scanning.
-- Event logging is auxiliary: an event-store write problem is surfaced diagnostically
-  but does not corrupt or falsely roll back a primary action that already completed.
+### Governed Tool Actions
 
-### Voice Client Bridge completed
+- Fixed reviewed Tier 3 tool catalog:
+  - `platform.status`
+  - `memory.search`
+  - `memory.remember`
+  - `memory.forget`
+- Per-account durable action records in ignored `tool_actions.json`.
+- Read-only tools can execute when ready.
+- State-changing personal tools require explicit approve/reject before execution.
+- Rejected or unapproved mutation cannot execute.
+- No generic shell, arbitrary network, dynamic plugin/Python loader, package installer,
+  unrestricted filesystem action, or Git tool.
 
-- `POST /v1/voice/turn` is a signed-in transcript-to-conversation API.
-- It uses the same account-owned durable conversation history and local-model/built-in
-  fallback as SAD Chat.
-- It may continue an existing owned chat session or create a new one.
-- It returns `reply`, `speech_text`, response engine, session ID, and explicit
-  transcript/text-for-local-TTS mode metadata.
-- Voice transport grants no repair, coding, app-management, account, shell, file, or
-  Git authority.
-- Learning-mode phones may use Voice after pairing and normal login.
-- Direct browser microphone capture, STT, and TTS are intentionally not bundled yet;
-  the current milestone establishes the stable transport contract.
+### Personal Study and Forge
 
-### Local SDK completed
+- Request-directed Study help, including explanation, work checking, writing/essay/rubric
+  help and optional Local AI generation.
+- Forge quests, hints, mastery/boss checks, durable progress, XP/ranks, and companion
+  progression.
 
-- `sad_sdk.py` is a standard-library-only synchronous local integration SDK.
-- It accepts only loopback SAD Core URLs and rejects remote or credentialed URLs.
-- It keeps user-session and machine-client authorization schemes separate.
-- It can perform health, user login, human Platform discovery/compatibility/Voice, and
-  app manifest/compatibility/event calls.
-- It does not persist credentials.
-- The security-surface regression test explicitly enumerates it as a reviewed network
-  client rather than widening network-module permission generally.
+### Coding and controlled repair
 
-## Existing Alpha capabilities retained
+- Developer Workspace multi-file coding with human-approved scope, private worktree,
+  strict generated edit plan, Docker verification, exact diff/test evidence, Owner-only
+  apply/rollback, stale/tamper checks, backup, and whole-set restoration on failure.
+- Failure-driven repair with strict scoped proposal, isolated verification, exact tested
+  diff, Owner YES/NO, stale-source check, atomic local apply, backup, and rollback.
+- Coding/repair agents have no Git commit/push/fetch/rebase/merge/credential authority.
 
-### SAD Chat
+### Platform apps/events
 
-- Dedicated free-form multi-turn conversation lane.
-- Durable per-account sessions, history, archive, and account isolation.
-- Recent-turn context to the configured loopback local model.
-- Visible `Local AI` vs `Built-in dialogue` status.
-- Conversation text does not grant governed authority.
+- Owner-managed scoped loopback `SAD-App` credentials.
+- One-time app secrets, hashed at rest, rotation/revocation.
+- Machine scopes limited to Platform discovery/catalog/modules/compatibility/events.
+- Machine credentials cannot impersonate human users.
+- Privacy-minimized bounded platform events.
+- Tier 3 memory/tool lifecycle events contain metadata only, not private Memory content,
+  tool arguments/output, conversations, code/diffs, or secrets.
+- Standard-library loopback Python SDK.
 
-### Personal Study
+### Mobile/PWA
 
-- Explanation, method teaching, walkthroughs, checking, hints, direct answers when
-  requested, proofreading, essay editing, rubric review, examples, and substantive
-  word-count expansion without a forced three-question loop.
+- Separate TLS-only paired mobile gateway while Core remains loopback-only.
+- One-time pairing, expiry, throttling, device revocation, Secure/HttpOnly/SameSite=Strict
+  paired-device cookie.
+- Learning mode allows exact personal routes for Chat, Voice, Memory, governed Tools,
+  Study, Forge, and own progress.
+- Full-role mode still defers human routes to account RBAC.
+- `SAD-App` machine endpoints are blocked through Mobile in all device modes.
+- Memory & Tools phone-first PWA surface.
+- Service worker caches static shell only and excludes all `/v1/*` and `/mobile/*` data.
 
-### Forge Learning
+## Automated verification
 
-- Homework-to-quest conversion, progressive hint ladder, mastery/boss gates, XP/ranks,
-  companion progression, durable student progress, and game-first browser interface.
+Tier 3 automated coverage includes:
 
-### Developer Workspace
-
-- Task → scope suggestion → human-approved paths → multi-file local-model generation →
-  digest-pinned networkless/non-root Docker full-suite verification → exact diff/test
-  evidence → Owner-only apply/rollback.
-- Up to 20 approved text-source paths per Alpha workspace.
-- `.git`, `.github`, secrets, runtime data, control-plane paths, hidden paths, and
-  unsupported/binary files remain excluded.
-- Failed/unavailable isolation cannot become applyable.
-- Stale live source or tampered tested worktree blocks application.
-- Multi-file apply is transactional with backups and verified whole-set restore.
-- Developer can prepare/test but cannot apply; Reviewer/Viewer inspect only;
-  Student/Teacher have no Code Workspace authority.
-- No Git authority is granted to the coding agent.
-
-### Controlled self-repair
-
-- Failure evidence → human review/push → explicit isolated-work approval → local-model
-  single-file repair draft → Docker verification → exact diff/test evidence → human
-  decision → Owner-only exact tested local application/rollback.
-- Reviewer decision remains evidence-only.
-- Forge cannot approve itself and has no Git credentials/authority.
-
-### Accounts and roles
-
-- Student, Teacher, Owner, Developer, Reviewer, Viewer.
-- PBKDF2 password hashing, lockout, expiring in-memory sessions, password-change session
-  revocation, role-based account creation and management.
-- Owner now additionally has `platform:manage`; no lower role receives it.
-
-### Mobile Preview
-
-- Installable PWA shell with phone-first layout, safe areas, install hooks, and
-  online/offline status.
-- Owner-created one-time 8-digit pair codes, five-minute expiry, single use,
-  rate-limited failures, 30-day device expiry, and revocation.
-- Paired-device secret is hashed at rest and browser-invisible through a
-  Secure/HttpOnly/SameSite=Strict cookie.
-- Core SAD API remains loopback-only.
-- Mobile gateway is separate TLS 1.2+ on one explicit private/approved overlay IPv4
-  address, refusing wildcard/public/hostname/loopback binds.
-- Learning mode admits explicit Chat, Voice, account-self, Study, Forge, and own-progress
-  routes only.
-- Full Role mode preserves normal human RBAC.
-- Machine-client endpoints are blocked in both mobile modes.
-- PWA never caches `/v1/*` or `/mobile/*` private traffic.
-
-## Automated verification coverage
-
-The repository suite covers, among other areas:
-
-- authentication/role separation;
-- Platform registry uniqueness and role filtering;
-- capability version negotiation;
-- app secret hashing, scope enforcement, rotation, and revocation;
-- machine/user credential separation;
-- exact event subscription filtering including empty-subscription fail-closed behavior;
-- event size/type bounds;
-- Voice account-owned conversation behavior;
-- mobile Voice allowance and machine-client denial;
-- SDK loopback-only networking;
-- network/process module allow-listing;
-- SAD Chat isolation/persistence;
-- Developer Workspace scope, Docker, stale/tamper, transactional apply/rollback;
-- repair planning/isolation/application/rollback;
-- mobile pairing/bind/cache/privacy controls;
-- browser accessibility structure;
-- release-integrity required paths and private-runtime exclusions.
-
-CI compiles Python, syntax-checks all browser JavaScript, runs the full unit/security/UI
-suite, runs the Alpha release gate/operator preflight, then performs the digest-pinned
-Docker isolation proof.
+- Memory account isolation/search/edit/delete.
+- enabled/disabled/expired context behavior.
+- Local AI Memory injection and per-turn opt-out.
+- governed tool ownership and mutation approval.
+- unknown tool rejection.
+- event privacy.
+- mobile exact-route admission and privileged denial.
+- Memory & Tools responsive/accessibility/PWA-cache contract.
+- Platform registry schema/version/authority metadata.
+- existing Chat/Voice/Study/Forge/coding/repair/account/mobile security regressions.
+- compile and browser JavaScript syntax checks.
+- Alpha release integrity/preflight.
+- real CI Docker isolation proof.
 
 ## Remaining operational work
 
-### Deployment host
+The code milestone is not the same as deployment proof. Remaining host/device work:
 
-- Repeat Docker isolation proof on the actual Windows deployment computer using the
-  reviewed image for that host.
-- Configure and validate the intended local AI model on the deployment computer.
-- Exercise a real Developer Workspace generation/test/apply/rollback cycle on a
-  disposable or backed-up working copy.
-- Exercise controlled repair on the deployment host.
+1. Pull the final merged `main` commit to the deployment Windows computer.
+2. Configure and validate the intended local model.
+3. Repeat the reviewed Docker proof on that actual host.
+4. Run base Alpha human UAT for all representative roles.
+5. Run `PLATFORM_TIER2_UAT.md` local-app/event/Voice transport checks.
+6. Run `PLATFORM_TIER3_UAT.md` Memory/Tool ownership, context, approval, event privacy,
+   mobile, PWA, keyboard, screen-reader, zoom, and narrow-screen checks.
+7. Configure phone-trusted TLS/private bind address and require
+   `python mobile_doctor.py` → `MOBILE GATEWAY: READY` before claiming mobile operation.
+8. Pair/test real iPhone/Android devices for any platform support that will be claimed.
+9. Add real local STT + TTS if full microphone-to-speaker Voice is desired.
+10. Add Windows packaging/installer/service only after host-level Alpha behavior is
+    accepted and migration/backup rules are defined.
 
-### Platform Tier 2 human UAT
+## Current release gate
 
-- Create an Owner local-app credential and verify the secret is visible only once.
-- Verify list output never reveals secret/hash/salt.
-- Rotate and prove the previous secret immediately fails.
-- Revoke and prove the current secret fails.
-- Prove Student/Teacher/Developer/Reviewer/Viewer cannot mint app credentials.
-- Prove a machine credential cannot be used as a Bearer user session.
-- Verify a machine app reads only its approved event types and an empty subscription
-  yields no events.
-- Verify compatibility negotiation hides unowned capabilities.
-- Run the Python SDK from a real local companion process and confirm remote base URLs
-  are rejected.
-- Run a real Voice transcript turn with the intended local model and confirm the same
-  account owns/continues the resulting Chat session.
+For the SAD-as-platform Alpha candidate, require:
 
-### Human Alpha UAT
+```text
+python -m compileall -q .
+python -m unittest -v
+python release_gate.py
+python alpha_doctor.py
+```
 
-- Run representative Owner, Developer, Reviewer, Viewer, Teacher, and Student scenarios.
-- Perform keyboard-only, screen-reader, 200% zoom, and narrow-viewport checks.
-- Verify Platform app/event controls are usable and secrets are not accidentally
-  retained by browser/PWA cache.
+Automatic coding/repair readiness also requires `python docker_proof.py` using the
+reviewed digest-pinned sandbox image. Mobile operation additionally requires
+`mobile_doctor.py` and device-specific UAT.
 
-### Mobile host/phone UAT
-
-- Provision phone-trusted TLS material and require `MOBILE GATEWAY: READY`.
-- Pair/test iPhone and Android combinations intended to be claimed.
-- Verify Chat and Voice transcript transport, learning-mode denial of Platform admin,
-  coding, dashboard, account, repair, and machine-client endpoints.
-- Verify Full Role human RBAC and explicit machine-client denial.
-- Verify revoke/forget/reconnect/install/offline behavior and narrow-screen usability.
-
-### Later platform work, not current Alpha claims
-
-- Direct microphone capture in an approved browser/native client.
-- Reviewed local STT/TTS engines.
-- Richer local event delivery/subscription mechanisms.
-- A separately sandboxed dynamic plugin/extension execution model, if desired.
-- Plugin marketplace/package installation.
-- Public-internet app credentials or hosted identity/secrets/recovery.
-
-## Verification gate
-
-For current SAD Platform Alpha run:
-
-- `python -m compileall -q .`
-- `python -m unittest -v`
-- `python release_gate.py`
-- `python alpha_doctor.py`
-- `python docker_proof.py` when automatic-code readiness is claimed
-- `python mobile_doctor.py` on the actual configured mobile host before mobile readiness
-- `ALPHA_UAT.md` plus the Platform Tier 2 acceptance cases documented in
-  `PLATFORM_SDK.md`/`PLATFORM.md`
-
-A release is blocked by any core/security test failure, release-integrity failure,
-automatic-code isolation failure when that feature is claimed ready, tested-code
-source/hash failure, privilege/role/scope leak, machine-to-human credential escape,
-private event payload leakage, or live/Git integrity failure.
+A release is blocked by any failing core test, release-integrity failure, authority
+leak, Memory/tool cross-account access, unapproved mutating tool execution, private-data
+cache/source leakage, unavailable required coding isolation, stale/tampered tested code,
+or failed live/Git integrity evidence.
