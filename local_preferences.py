@@ -28,7 +28,7 @@ def _using_live_preferences():
         return Path(LOCAL_PREFERENCES_FILE) == Path(DEFAULT_PREFERENCES_FILE)
 
 
-def _persistence():
+def _persistence(database=None):
     return RuntimeJSONDocument(
         "preferences.json",
         PREFERENCES_NAMESPACE,
@@ -36,28 +36,29 @@ def _persistence():
         _validate_preferences,
         MAX_PREFERENCES_BYTES,
         path=None if _using_live_preferences() else LOCAL_PREFERENCES_FILE,
+        database=database,
     )
 
 
-def local_preferences_are_configured():
+def local_preferences_are_configured(database=None):
     """Return whether optional local preferences exist in the selected persistence mode."""
     if not _using_live_preferences():
         return Path(LOCAL_PREFERENCES_FILE).exists()
     if Path(LOCAL_PREFERENCES_FILE).exists():
         return True
     try:
-        return RuntimeDatabase().has_document(PREFERENCES_NAMESPACE)
+        return (database or RuntimeDatabase()).has_document(PREFERENCES_NAMESPACE)
     except (OSError, ValueError):
         return False
 
 
-def load_local_preferences():
+def load_local_preferences(database=None):
     """Load optional local preferences safely.
 
     Custom file-path mode keeps the historic tolerant behavior for isolated local tooling.
     The live encrypted runtime fails closed on malformed/migration-conflicting state.
     """
-    if not local_preferences_are_configured():
+    if not local_preferences_are_configured(database):
         return {}
     if not _using_live_preferences():
         try:
@@ -65,4 +66,4 @@ def load_local_preferences():
         except (json.JSONDecodeError, OSError):
             return {}
         return preferences if isinstance(preferences, dict) else {}
-    return _persistence().load()
+    return _persistence(database).load()
