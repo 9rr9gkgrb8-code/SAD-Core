@@ -19,6 +19,7 @@ from personal_study import StudyAction, StudyRequest, build_study_plan
 from platform_clients import PlatformClientStore
 from platform_events import PlatformEventStore
 from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
+from request_security import validate_browser_request
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from study_generator import generate_study_result
@@ -27,6 +28,7 @@ from tool_actions import ToolActionStore
 
 API_VERSION = "v1"
 MAX_REQUEST_BYTES = 2_000_000
+LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 
 
 class SadApiService:
@@ -295,6 +297,9 @@ class SadApiService:
                 return 200, self.developer_workspaces.get(workspace_id)
             if method == "POST" and action == "execute":
                 self.auth.require(token, "development:work")
+                workspace_meta = self.developer_workspaces.get(workspace_id)
+                if account["role"] != "owner" and workspace_meta.get("created_by") != account_id:
+                    raise PermissionError("Developers may execute only workspaces they created.")
                 workspace = self.developer_workspaces.execute(workspace_id)
                 self._publish("development.workspace.executed", subject_id=workspace_id, details={"state": workspace.get("state")})
                 return 200, workspace
@@ -434,6 +439,9 @@ class SadApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -441,6 +449,9 @@ class SadApiHandler(BaseHTTPRequestHandler):
         try:
             if self.command == "GET" and (self.path in {"/", "/manifest.webmanifest", "/sw.js"} or self.path.startswith("/ui/")):
                 return self._serve_ui()
+            validate_browser_request(
+                self.headers, self.command, expected_scheme="http", allowed_hostnames=LOOPBACK_HOSTNAMES,
+            )
             length = int(self.headers.get("Content-Length", "0"))
             if length < 0 or length > MAX_REQUEST_BYTES:
                 return self._respond(413, {"error": "request_too_large"})
@@ -472,6 +483,7 @@ class SadApiHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         if target.name == "sw.js":
             self.send_header("Service-Worker-Allowed", "/")
@@ -486,7 +498,7 @@ class SadApiHandler(BaseHTTPRequestHandler):
 
 
 def create_server(host="127.0.0.1", port=8765, service=None):
-    if host not in {"127.0.0.1", "::1", "localhost"}:
+    if host not in LOOPBACK_HOSTNAMES:
         raise ValueError("SAD API may bind only to loopback.")
     handler = type("BoundSadApiHandler", (SadApiHandler,), {"service": service or SadApiService()})
     server = ThreadingHTTPServer((host, port), handler)
