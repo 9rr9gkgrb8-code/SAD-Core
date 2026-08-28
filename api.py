@@ -14,7 +14,7 @@ from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEve
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
-from platform_registry import PLATFORM_VERSION, PlatformRegistry
+from platform_registry import PlatformRegistry
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from study_generator import generate_study_result
@@ -46,7 +46,7 @@ class SadApiService:
 
     def dispatch(self, method, path, headers, body):
         if method == "GET" and path == "/health":
-            return 200, {"status": "ok", "api_version": API_VERSION, "platform_version": PLATFORM_VERSION}
+            return 200, {"status": "ok", "api_version": API_VERSION}
         if method == "POST" and path == "/v1/auth/login":
             token = self.auth.login(body.get("username", ""), body.get("password", ""))
             if not token:
