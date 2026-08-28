@@ -17,22 +17,28 @@ No principal may be silently converted into another.
 
 ## At-rest encryption
 
-Encryption Tier 1 uses Windows Data Protection API (DPAPI) through the operating system.
-SAD does not implement its own cipher and does not store an application master key in the
-repository/runtime tree.
+Encryption Tier 2 uses two reviewed cryptographic boundaries rather than a home-grown cipher:
+
+1. Windows Data Protection API (DPAPI) for live/default runtime state and routine native backups.
+2. AES-256-GCM through the exact PyCA `cryptography` version pinned in `requirements.txt` for portable disaster-recovery backups.
 
 On the intended Windows deployment path:
 
-- Tier 2/3 SQLite document payloads use current-user DPAPI protection;
-- the DPAPI entropy/purpose is bound to the exact SAD data purpose/namespace;
-- existing plaintext runtime documents are converted transactionally before the database
-  declares the protection scheme active;
+- runtime SQLite document payloads use current-user DPAPI protection;
+- DPAPI purpose/entropy is bound to the exact SAD data namespace;
+- existing plaintext runtime documents are converted transactionally before the database declares the protection scheme active;
 - after protection is declared, a plaintext/downgraded document row blocks startup;
-- encrypted `.sadbak` backup containers protect the complete verified inner backup;
-- plaintext legacy backup ZIPs are rejected by normal verify/restore and require an
-  explicit migration/compatibility path;
+- native `.sadbak` containers protect the complete verified archive with DPAPI;
+- portable `.sadbak` containers encrypt the complete verified archive with passphrase-derived AES-256-GCM;
+- portable runtime SQLite is exported host-neutral only in memory and is re-protected for the destination Windows user before live restore;
+- plaintext legacy backup ZIPs are rejected by normal verify/restore and require an explicit compatibility/migration path;
 - passwords remain one-way PBKDF2 hashes rather than reversible encrypted values;
 - app/device secrets remain one-way hashed where the original value need not be recovered.
+
+Portable key derivation uses PBKDF2-HMAC-SHA256 with a random per-backup salt. The portable
+passphrase is prompted interactively, is never accepted as a command-line argument, and is
+not stored by SAD. Wrong passphrases and modified AES-GCM ciphertext fail authenticated
+decryption through the same caller-visible error class.
 
 DPAPI is user-context protection, not a substitute for full-disk encryption. BitLocker or
 equivalent full-disk encryption remains the outer protection against offline disk theft.
@@ -45,9 +51,20 @@ certificate/recovery process is established.
 
 ## Runtime persistence
 
-Tier 2/3 default state uses `local_data/sad_runtime.sqlite3`, a versioned SQLite runtime
-database. Current namespaces cover Personal Memory, Tool Actions, Platform client
-registrations, and Platform events.
+Default live state uses `local_data/sad_runtime.sqlite3`, a versioned SQLite runtime
+database. Protected namespaces now cover:
+
+- accounts and profiles;
+- Chat history;
+- Forge/student progress;
+- mobile pairing/device trust state;
+- failure records;
+- Owner/Developer dashboard evidence;
+- dialogue settings;
+- Personal Memory;
+- governed Tool Actions;
+- Platform client registrations;
+- Platform events.
 
 Security rules:
 
@@ -56,16 +73,17 @@ Security rules:
 - SQLite uses full synchronous writes and explicit transactions;
 - database/document sizes are bounded;
 - database schema/document schema versions are checked;
-- `PRAGMA quick_check` is exposed for preflight/backup verification;
+- `PRAGMA quick_check` is used by preflight/backup verification;
 - Windows live document payloads are DPAPI-protected before persistence;
 - protected envelopes and at-rest metadata are versioned and downgrade-checked;
-- validated legacy JSON is imported only if the SQLite namespace does not already exist;
-- import is verified before the legacy JSON is moved to a protected archive;
-- simultaneous live SQLite + legacy JSON state fails closed instead of being merged implicitly.
+- validated legacy JSON/record state is imported only if the SQLite namespace does not already exist;
+- imported content is read back before the legacy live file is archived;
+- on protected Windows, new legacy-import archives are themselves DPAPI-protected and old plaintext import archives are upgraded;
+- simultaneous live SQLite + legacy state fails closed instead of being merged implicitly.
 
-Accounts, Chat/progress/settings/failure/mobile state remain compatible private stores in
-this milestone. Until migrated into the protected data layer, their confidentiality at
-rest depends on host/full-disk/file encryption.
+Explicit custom file paths remain available to isolated tests and compatibility/recovery
+tools. They are not the live/default production persistence path and must not be confused
+with the protected Windows runtime claim.
 
 ## Backup and restore
 
@@ -73,18 +91,21 @@ Backups contain sensitive local data. `backup_manager.py` therefore:
 
 - requires the destination to be outside the SAD project/runtime tree;
 - rejects symlink and path-escape sources;
-- uses SQLite's backup API for a consistent runtime-database snapshot;
+- creates consistent SQLite snapshots/exports;
 - emits an inner manifest with every path, size, and SHA-256;
 - rejects duplicate, undeclared, traversal, size-mismatched, or hash-mismatched archive data;
 - verifies SQLite integrity inside the archive;
-- on Windows, DPAPI-protects the complete verified backup container before final write;
+- DPAPI-protects native Windows backup containers;
+- AES-GCM-protects portable backup containers;
+- excludes source-profile DPAPI import archives from portable disaster-recovery exports;
 - rejects normal plaintext backup verify/restore unless compatibility is explicitly requested;
 - requires explicit approval before restore;
 - stages and verifies files before replacement;
 - restores already-replaced original bytes if a later replacement fails.
 
-SAD should be stopped during restore. Tier 1 DPAPI backups are intentionally bound to the
-Windows protection context and are not yet a portable cross-machine archival format.
+Portable restore is Windows-only because the final live database must be re-bound to the
+destination Windows user's DPAPI context before it is written as live state. SAD should be
+stopped during all restore operations.
 
 ## Personal Memory
 
@@ -126,7 +147,9 @@ playback are deployment/client UAT, not an authority capability silently enabled
 
 Passwords use salted PBKDF2 hashes, sessions expire/revoke, repeated failed logins lock
 accounts temporarily, and account/session growth is bounded. Roles remain explicit:
-Owner, Developer, Reviewer, Viewer, Teacher, and Student.
+Owner, Developer, Reviewer, Viewer, Teacher, and Student. The account document is now
+inside the protected runtime database, but the password verifier remains intentionally
+one-way rather than decryptable.
 
 ## Local app credentials and events
 
@@ -146,7 +169,8 @@ Core remains loopback-only. Mobile is a separate TLS 1.2+ paired gateway bound o
 explicit RFC1918/approved CGNAT IPv4 address. Pairing codes are one-time, five-minute,
 rate-limited, and persisted with slow salted hashing; device tokens are high entropy,
 hashed at rest, revocable, and delivered to browsers through Secure/HttpOnly/
-SameSite=Strict cookies.
+SameSite=Strict cookies. Mobile trust metadata now also resides inside the encrypted live
+runtime document layer.
 
 Learning-mode route admission is narrow and machine-client endpoints are blocked through
 Mobile even for full-role devices. Core and Mobile HTTP servers have bounded concurrent
@@ -175,24 +199,29 @@ Git credential authority.
 The full suite, Protocol Black, release gate, and Alpha preflight run in CI on Ubuntu
 Python 3.11 plus Windows Python 3.11 and 3.12. `windows_doctor.py` additionally requires
 the Windows OS gate, private-data writability, a real current-user DPAPI round-trip,
-SQLite runtime integrity, and active runtime payload protection.
+SQLite runtime integrity, active runtime payload protection, and the exact reviewed
+portable-backup crypto dependency.
 
-CI Windows runners do not prove the actual Windows 11 deployment machine. Real host
-patch state, Windows account permissions, firewall, BitLocker/full-disk encryption,
-Docker Desktop permissions, model/runtime provenance, TLS key permissions, LAN/router
-configuration, backup recovery context, phone trust, microphone/speaker behavior, and
-physical compromise remain deployment UAT or host-security responsibilities.
+CI Windows runners do not prove the actual Windows deployment machine. Real host patch
+state, Windows account permissions, firewall, BitLocker/full-disk encryption, Docker
+Desktop permissions, model/runtime provenance, TLS key permissions, LAN/router
+configuration, portable-backup passphrase custody, cross-profile restore evidence, phone
+trust, microphone/speaker behavior, and physical compromise remain deployment UAT or
+host-security responsibilities.
 
 ## Private runtime data
 
-Treat `local_data/` (including `sad_runtime.sqlite3` and legacy import archives), account/
-conversation/progress/settings/failure/mobile state, app/device credentials, Memory,
-Tool Actions, `.sad_sandbox/`, `.sad_dev/`, `.env`, and backup artifacts as private. Never
-commit them, even when a subset is application-encrypted.
+Treat `local_data/` (including `sad_runtime.sqlite3` and legacy import archives), app/device
+credentials, Memory, Tool Actions, `.sad_sandbox/`, `.sad_dev/`, `.env`, and all backup
+artifacts as private. Never commit them, even when a subset is application-encrypted.
+
+`.env` remains a live host configuration file rather than a runtime SQLite document. It is
+encrypted when inside a native/portable backup container, but its live at-rest protection
+depends on Windows ACLs plus BitLocker/full-disk encryption.
 
 ## Acceptance
 
 Automated tests are a regression net, not a substitute for deployment validation. Run
-`ALPHA_UAT.md`, `PLATFORM_TIER2_UAT.md`, `PLATFORM_TIER3_UAT.md`, `ENCRYPTION.md`,
-`WINDOWS.md`, and the mobile/Voice/backup procedures on the actual devices for which
-operational support will be claimed.
+`ALPHA_UAT.md`, `PLATFORM_TIER2_UAT.md`, `PLATFORM_TIER3_UAT.md`,
+`ENCRYPTION_TIER2_UAT.md`, `WINDOWS.md`, and the mobile/Voice/backup procedures on the
+actual devices for which operational support will be claimed.
