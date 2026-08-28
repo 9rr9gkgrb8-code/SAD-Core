@@ -13,8 +13,8 @@ and which stable routes implement those capabilities.
 
 Current discovery endpoints:
 
-- `GET /health` — public minimal health plus API/platform version only
-- `GET /v1/platform` — signed-in role-filtered platform manifest
+- `GET /health` — existing public minimal health/API version contract
+- `GET /v1/platform` — signed-in role-filtered platform manifest including platform version
 - `GET /v1/platform/modules` — signed-in visible modules and their capabilities
 - `GET /v1/platform/capabilities` — signed-in flattened capability catalog
 
@@ -29,7 +29,8 @@ Current Platform Core version: `0.1-alpha`
 Platform manifest schema version: `1`
 
 The API remains `v1`. Platform and API versions are intentionally separate so SAD can
-evolve module discovery without silently changing an existing route contract.
+evolve module discovery without silently changing an existing route contract. The
+legacy `/health` response is intentionally unchanged for backward compatibility.
 
 ## Built-in modules
 
@@ -171,7 +172,7 @@ responses, including the live capability catalog.
 
 ## Security and privacy
 
-- `/health` exposes only minimal product version/health metadata.
+- `/health` keeps the established minimal `{status, api_version}` response.
 - Detailed modules/capabilities require a valid account session.
 - Role filtering happens on the server.
 - The client is not trusted to enforce permissions.
