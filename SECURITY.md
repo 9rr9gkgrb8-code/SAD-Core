@@ -1,186 +1,165 @@
 # SAD security model
 
 SAD is local-first and fail-closed around authority. Platform discovery, AI output, saved
-Memory, Tool Actions, mobile pairing, coding evidence, and app metadata do not create
-permission by themselves.
+Memory, Tool Actions, mobile pairing, coding evidence, app metadata, backup artifacts,
+and Voice transport do not create permission by themselves.
 
 ## Principal separation
 
 SAD distinguishes:
 
-1. **Human account sessions** — Bearer sessions authorized by the existing role map.
-2. **Local app credentials** — scoped `SAD-App` secrets for loopback Platform metadata
-   integrations only.
-3. **AI components** — text/code generators that receive no human or machine identity
-   merely because they produced output.
+1. **Human account sessions** authorized by the local role map.
+2. **Local app credentials** scoped to loopback Platform metadata integrations.
+3. **AI components** that receive no human/machine identity merely because they produced output.
+4. **Speech services** that receive only turn audio/text and gain no SAD identity or authority.
 
 No principal may be silently converted into another.
 
-## Platform discovery
+## Runtime persistence
 
-- `/health` remains minimal and public on the loopback service.
-- Detailed Platform manifests require a valid human session or an explicitly scoped
-  machine credential on the machine-client endpoints.
-- Capability metadata is descriptive and never grants endpoint authority.
-- Compatibility negotiation is filtered to the requesting principal.
-- Dynamic extension/plugin execution remains disabled.
-
-## Personal Memory
-
-Tier 3 Memory is explicit user-controlled data.
-
-- Ordinary Chat/Voice text is **not automatically written** into long-term Memory.
-- Every memory record has one `account_id`; cross-account list/search/update/delete is
-  denied/not-found.
-- Categories are allow-listed: fact, preference, goal, project, note.
-- Title/content, file size, item count, search count, and expiry format are bounded.
-- Memory writes use a temporary file + replace and restrictive file permissions where
-  supported.
-- `memory.json` is Git-ignored and excluded from release-source scanning.
-- Only enabled, non-expired memories may be returned by the Memory context selector.
-- Chat/Voice may set `use_memory: false` to exclude Memory for that request.
-- `memory_used` is true only when memory context existed and the configured Local AI
-  engine actually handled the response.
-- Built-in dialogue does not claim that saved Memory was used.
-
-Memory contents/titles are not placed in Platform event metadata.
-
-## Governed Tool Actions
-
-Tier 3 Tool Actions use a fixed reviewed catalog. A tool identifier alone cannot load or
-execute arbitrary code.
-
-Current tools:
-
-- `platform.status`
-- `memory.search`
-- `memory.remember`
-- `memory.forget`
+Tier 2/3 default state now uses `local_data/sad_runtime.sqlite3`, a versioned SQLite
+runtime database. Current namespaces cover Personal Memory, Tool Actions, Platform client
+registrations, and Platform events.
 
 Security rules:
 
-- Tool definitions are explicit Python call paths inside `tool_actions.py`.
-- There is no generic shell/subprocess, arbitrary URL/network request, dynamic
-  `eval`/`exec`/plugin loader, package installation, unrestricted filesystem tool, or
-  Git tool.
-- Tool arguments/output are JSON bounded.
-- Tool records are owned by one account and cannot be read/decided/executed by another.
-- Read-only tools may enter `ready` immediately.
-- State-changing tools enter `awaiting_approval`.
-- State-changing execution before explicit approval fails.
-- Rejecting a tool leaves it non-executable.
-- The exact approved action arguments are the arguments executed.
-- `tool_actions.json` is Git-ignored and excluded from release-source scanning.
+- the database path is private runtime data and never coding source;
+- existing database paths must be regular files, not symlinks;
+- SQLite uses full synchronous writes and explicit transactions;
+- database/document sizes are bounded;
+- database schema/document schema versions are checked;
+- `PRAGMA quick_check` is exposed for preflight/backup verification;
+- validated legacy JSON is imported only if the SQLite namespace does not already exist;
+- import is verified before the legacy JSON is moved to a protected archive;
+- simultaneous live SQLite + legacy JSON state fails closed instead of being merged implicitly.
 
-Platform tool events contain lifecycle/status metadata only, not arguments or outputs.
+Accounts, Chat/progress/settings/failure/mobile state remain compatible private stores in
+this stabilization milestone and remain inside the backup/security boundary.
 
-## SAD Chat and Voice
+## Backup and restore
 
-- Conversations belong to exactly one account.
-- Guessing another conversation UUID does not grant access.
-- Conversation history is bounded, atomically written, Git-ignored, and uses restrictive
-  permissions where supported.
-- Only recent turns are sent to Local AI rather than blindly injecting the full history.
-- Chat/Voice text itself has no repair, coding, account, app-management, tool-approval,
-  filesystem, shell, or Git authority.
-- The Voice route uses the same account ownership and optional Memory rules as Chat.
-- Browser microphone access remains disabled until the STT/TTS client boundary is
-  implemented and reviewed.
+Backups contain sensitive local data. `backup_manager.py` therefore:
 
-## Local model
+- requires the destination to be outside the SAD project/runtime tree;
+- rejects symlink and path-escape sources;
+- uses SQLite's backup API for a consistent runtime-database snapshot;
+- emits a manifest with every path, size, and SHA-256;
+- rejects duplicate, undeclared, traversal, size-mismatched, or hash-mismatched archive data;
+- verifies SQLite integrity inside the archive;
+- requires explicit approval before restore;
+- stages and verifies files before replacement;
+- restores already-replaced original bytes if a later replacement fails.
 
-- Conversation/model data may be sent only to an explicitly configured loopback HTTP
-  model endpoint.
-- Credentialed or non-loopback model URLs are rejected.
-- If the model is unavailable, SAD fails honestly to Built-in dialogue where that
-  fallback exists; coding/automatic repair generation fails closed rather than guessing.
+SAD should be stopped during restore. Backups are not encrypted by SAD in this milestone;
+the operator must store them on trusted encrypted media/location when confidentiality at
+rest is required.
+
+## Personal Memory
+
+Ordinary Chat/Voice text is not automatically promoted into long-term Memory. Memories
+are account-owned, bounded, user-controlled, and only enabled/non-expired entries may be
+supplied to Local AI. Chat/Voice may disable Memory per turn. Context is labeled untrusted
+model data and is never treated as authorization.
+
+## Governed Tool Actions
+
+The current reviewed catalog is `platform.status`, `memory.search`, `memory.remember`, and
+`memory.forget`. There is no generic shell/subprocess, arbitrary URL/network request,
+dynamic `eval`/`exec`/plugin loader, package installer, unrestricted filesystem tool, or
+Git tool.
+
+Tool records are account-owned. State-changing actions require explicit approve/reject,
+and approval is bound to the exact canonical argument SHA-256. Argument/tool metadata
+mismatch moves the action to `tampered` and execution is refused.
+
+## Chat, local model, and Voice
+
+Conversations belong to one account, are bounded, and do not grant repair/coding/tool/Git
+authority. Model traffic may be sent only to an explicitly configured loopback HTTP
+endpoint. Credentialed/non-loopback model URLs are rejected.
+
+`voice_runtime.py` applies the same network principle to optional STT/TTS services:
+
+- only HTTP on `127.0.0.1`, `localhost`, or `::1`;
+- no credentials/path/query/fragment in configured base URLs;
+- fixed `/health`, `/v1/stt`, and `/v1/tts` contracts;
+- bounded audio/text/response sizes and timeouts;
+- speech services receive no SAD Bearer token, app secret, tool approval, filesystem,
+  Docker, or Git authority.
+
+Browser microphone permission remains disabled. Physical microphone capture/speaker
+playback are deployment/client UAT, not an authority capability silently enabled here.
 
 ## Accounts
 
-- Passwords are salted PBKDF2 hashes, never stored plaintext.
-- Sessions expire and can be revoked.
-- Repeated failed logins trigger temporary lockout.
-- Owner controls privileged account lifecycle; Teacher/Student/Developer/Reviewer/Viewer
-  authority remains role-limited.
+Passwords use salted PBKDF2 hashes, sessions expire/revoke, repeated failed logins lock
+accounts temporarily, and account/session growth is bounded. Roles remain explicit:
+Owner, Developer, Reviewer, Viewer, Teacher, and Student.
 
 ## Local app credentials and events
 
-- Owner alone manages local app registration/rotation/revocation.
-- App secrets are high entropy, returned only at create/rotate, salted/hashed at rest,
-  and omitted from list responses.
-- Machine scopes remain limited to Platform discovery/catalog/modules/compatibility and
-  approved event metadata.
-- `SAD-App` credentials cannot be used as Bearer human sessions.
-- Event subscriptions are exact and cannot widen themselves; an empty subscription
-  returns no events.
-- `platform_clients.json` and `platform_events.json` are private ignored runtime files.
-- Events must not contain conversations, prompts, memory content/title, tool args/output,
-  code/diffs, passwords, user/app/device tokens, student work, or other high-value
-  payloads.
-- `sad_sdk.py` accepts loopback Core URLs only and does not persist credentials.
+Owner alone manages local app registration/rotation/revocation. App secrets are high
+entropy, returned only at creation/rotation, hashed at rest, and omitted from list
+responses. Machine scopes remain limited to Platform discovery/catalog/modules/
+compatibility and approved metadata events. `SAD-App` credentials cannot become human
+Bearer sessions.
+
+Platform events are metadata-only and recursively reject high-risk keys such as content,
+messages, prompts, transcripts, passwords, tokens, secrets, code, diffs, tool args, and
+outputs.
 
 ## Mobile
 
-- Normal SAD Core remains loopback-only.
-- Mobile is a separate TLS 1.2+ gateway bound to one explicit private/approved-overlay
-  IPv4 address.
-- Wildcard, loopback, hostname-as-bind-target, and public IPv4 bindings are refused.
-- A phone must pass both paired-device trust and normal account authentication.
-- Pairing codes are one-time, five-minute, rate-limited, and hashed at rest.
-- Device tokens are hashed at rest and delivered as Secure/HttpOnly/SameSite=Strict
-  cookies.
-- Learning-mode admission uses exact routes for personal Chat, Voice, Memory, governed
-  Tools, Study, Forge, and own progress. Privileged development/admin routes stay
-  blocked.
-- `/v1/platform/client/*` machine endpoints are blocked through Mobile even in full-role
-  mode.
-- Revocation invalidates paired device access server-side.
-- Do not router-port-forward the mobile gateway to the public internet.
+Core remains loopback-only. Mobile is a separate TLS 1.2+ paired gateway bound only to an
+explicit RFC1918/approved CGNAT IPv4 address. Pairing codes are one-time, five-minute,
+rate-limited, and persisted with slow salted hashing; device tokens are high entropy,
+hashed at rest, revocable, and delivered to browsers through Secure/HttpOnly/
+SameSite=Strict cookies.
 
-## PWA privacy
+Learning-mode route admission is narrow and machine-client endpoints are blocked through
+Mobile even for full-role devices. Core and Mobile HTTP servers have bounded concurrent
+admission, bounded queues, and slow-client socket timeouts.
 
-The service worker may cache static shell assets only. It explicitly skips all `/v1/*`
-and `/mobile/*` traffic, including Chat, Voice, Memory, Tool Actions, Study, Forge,
-accounts, Platform manifests, coding evidence, repair evidence, sessions, pairing, and
-credentials.
+## Browser/PWA boundary
+
+Local/private browser API requests validate Host and same-origin browser metadata and
+require JSON for POST. CSP/frame restrictions remain active. Service workers cache static
+shell assets only and skip all `/v1/*` and `/mobile/*` private traffic.
 
 ## Coding and repair isolation
 
-- Developer Workspace is restricted to an explicit human-approved file scope.
-- `.git`, `.github`, credentials, runtime private data, hidden/control-plane paths, and
-  unsupported/binary files are excluded from automatic coding scope/worktrees.
-- Repair planning is narrower still and accepts only a strict approved single-file
-  replacement contract.
-- Automatic verification requires a preloaded digest-pinned Docker image.
-- Containers run networkless, non-root, with a read-only root/workspace, dropped
-  capabilities, no-new-privileges, stripped Git credentials, and resource/time limits.
-- Missing Docker/isolation fails closed. There is no same-user execution fallback.
-- Failed tests cannot become applyable.
-- Before live application SAD rechecks live source hashes and exact post-test hashes.
-- Developer Workspace multi-file application backs up originals and restores the whole
-  set if any operation/verification fails.
-- Repair application is exact-test-proposal/hash controlled and preserves a backup.
-- Only Owner governance crosses the live-code application/rollback boundary.
-- Repair/coding/apply paths do not run Git commit/push/fetch/rebase/merge or use Git
-  credentials.
+Developer Workspace requires human-approved file scope, private worktrees, strict edit
+plans, Docker verification, exact tested diffs, stale/tamper checks, and Owner-only live
+apply/rollback. Repair is narrower still. `.git`, `.github`, private runtime data,
+credentials, hidden/control-plane paths, unsupported/binary files, and SAD private
+workspaces are outside automatic coding scope.
+
+Containers remain digest-pinned, `--pull never`, networkless, non-root, read-only,
+capability-dropped, no-new-privileges, resource/time limited, and without Docker-socket or
+Git credential authority.
+
+## Windows deployment boundary
+
+The full suite, Protocol Black, release gate, and Alpha preflight now run in CI on Ubuntu
+Python 3.11 plus Windows Python 3.11 and 3.12. `windows_doctor.py` additionally checks the
+Windows OS gate, private-data writability, and SQLite runtime integrity.
+
+CI Windows runners do not prove the actual Windows 11 deployment machine. Real host
+patch state, Windows account permissions, firewall, full-disk encryption, Docker Desktop
+permissions, model/runtime provenance, TLS key permissions, LAN/router configuration,
+phone trust, microphone/speaker behavior, and physical compromise remain deployment UAT
+or host-security responsibilities.
 
 ## Private runtime data
 
-Treat these as private host data and never commit them:
-
-- accounts/settings/failures/dashboard/progress data
-- `chat_history.json`
-- `memory.json`
-- `tool_actions.json`
-- `platform_clients.json`
-- `platform_events.json`
-- mobile pairing state under local data
-- `.sad_sandbox/`
-- `.sad_dev/`
-- `.env`
+Treat `local_data/` (including `sad_runtime.sqlite3` and legacy import archives), account/
+conversation/progress/settings/failure/mobile state, app/device credentials, Memory,
+Tool Actions, `.sad_sandbox/`, `.sad_dev/`, `.env`, and backup archives as private. Never
+commit them.
 
 ## Acceptance
 
 Automated tests are a regression net, not a substitute for deployment validation. Run
-`ALPHA_UAT.md`, `PLATFORM_TIER2_UAT.md`, and `PLATFORM_TIER3_UAT.md` on the actual host,
-and the mobile UAT on any phone/device for which operational support will be claimed.
+`ALPHA_UAT.md`, `PLATFORM_TIER2_UAT.md`, `PLATFORM_TIER3_UAT.md`, `WINDOWS.md`, and the
+mobile/Voice/backup procedures on the actual devices for which operational support will
+be claimed.
