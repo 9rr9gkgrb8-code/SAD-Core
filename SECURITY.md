@@ -3,6 +3,11 @@
 ## Trust boundaries
 
 - Account records, settings, conversation history, failure reports, mobile pairing state, repair artifacts, and Developer Workspace artifacts are local data and are excluded from Git.
+- Platform Core is a declarative discovery layer. Module/capability metadata never grants permission, invokes a module, loads extension code, or substitutes for concrete endpoint authorization.
+- Detailed Platform manifests require a valid SAD account session and are filtered server-side using the existing `ROLE_PERMISSIONS` map. The browser/client is not trusted to enforce permissions.
+- Platform manifests contain static capability/route metadata only. They do not embed account records, conversation text, failure evidence, pairing secrets, workspace source, environment values, or other runtime private data.
+- Platform modules are not dynamic plugins in Alpha. Registering/describing a module cannot execute Python, JavaScript, shell commands, package installation, or Git operations.
+- The established public `/health` response remains minimal and backward-compatible; detailed role/capability discovery stays authenticated.
 - SAD Chat sessions are owned by exactly one authenticated account. Knowing another account's conversation UUID does not grant access.
 - Conversation history is written atomically to local `chat_history.json`, uses restrictive file permissions where supported, and fails before save if the bounded history file would exceed its storage limit.
 - Only recent conversation turns are supplied to the configured local model for context. The complete saved transcript is not automatically copied into every prompt.
@@ -26,10 +31,10 @@
 - A phone must pass two independent gates: a paired-device credential and normal SAD account authentication.
 - One-time mobile pairing codes expire after five minutes, are single-use, and are rate-limited at the gateway.
 - Pairing codes and paired-device tokens are hashed at rest. The live paired-device token is delivered only as a `Secure`, `HttpOnly`, `SameSite=Strict` cookie and is not exposed to browser JavaScript.
-- `learning` paired devices are restricted at the gateway to explicitly matched SAD Chat, account-self, Personal Study, Forge play, and own-progress routes. Developer Workspace routes are not admitted.
+- `learning` paired devices are restricted at the gateway to explicitly matched SAD Chat, account-self, Personal Study, Forge play, and own-progress routes. Developer Workspace and Platform development surfaces are not admitted.
 - `full_role` devices still rely on normal SAD RBAC after the device gate, so a Developer phone still cannot perform Owner application.
 - Revoking a paired device invalidates its device token server-side.
-- The service worker caches only static shell assets and explicitly excludes `/v1/*` and `/mobile/*` traffic, including chat and Developer Workspace API responses.
+- The service worker caches only static shell assets and explicitly excludes `/v1/*` and `/mobile/*` traffic, including Platform manifests, chat, and Developer Workspace API responses.
 - Automatic repair planning accepts only one JSON-described exact replacement in one allow-listed root file. Ambiguous, oversized, unchanged, or malformed plans fail closed before testing.
 - Repair verification fails closed unless Docker and a digest-pinned, preloaded `SAD_SANDBOX_IMAGE` are available.
 - Containers run without network, capabilities, privilege escalation, Git metadata, or a writable root filesystem. The proposal/worktree is mounted read-only; process, memory, CPU, time, and temporary-storage limits apply.
@@ -45,6 +50,8 @@ Docker must be installed and the configured image must already exist locally und
 The full SAD Chat experience requires the explicitly configured loopback local model. If that model is unavailable, the chat UI labels the response as `Built-in dialogue` and uses the limited built-in conversation layer instead of pretending a model-generated response occurred.
 
 Automatic repair drafting and Developer Workspace scope/implementation generation additionally require the explicitly configured local model. If the model is unavailable or cannot return the required strict JSON plan, the operation fails closed rather than testing or applying guessed code.
+
+Platform Core itself does not require the local model because its registry is deterministic metadata. Future dynamic extension execution, unattended machine credentials, event subscriptions, or remote plugin installation require separate security contracts and are not implied by Platform Core.
 
 Mobile mode additionally requires a certificate/private-key pair that loads under TLS 1.2 or newer and is trusted by the phone. SAD intentionally does not auto-install a trust root. Do not port-forward the mobile gateway to the public internet. Public hosting, internet TLS termination, hosted identity, recovery, and hosted secret management remain outside Alpha.
 
