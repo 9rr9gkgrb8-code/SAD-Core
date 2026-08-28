@@ -7,12 +7,12 @@ SQLite documents while preserving a protected import archive for recovery.
 
 from __future__ import annotations
 
+from contextlib import closing
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import shutil
 import sqlite3
 import threading
 
@@ -71,28 +71,33 @@ class RuntimeDatabase:
         return connection
 
     def _initialize(self):
-        with self.lock, self._connect() as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS runtime_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-            )
-            connection.execute(
-                """CREATE TABLE IF NOT EXISTS runtime_documents (
-                    namespace TEXT PRIMARY KEY,
-                    document_schema INTEGER NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )"""
-            )
-            row = connection.execute(
-                "SELECT value FROM runtime_meta WHERE key='database_schema_version'"
-            ).fetchone()
-            if row is None:
+        with self.lock, closing(self._connect()) as connection:
+            try:
                 connection.execute(
-                    "INSERT INTO runtime_meta(key, value) VALUES('database_schema_version', ?)",
-                    (str(DATABASE_SCHEMA_VERSION),),
+                    "CREATE TABLE IF NOT EXISTS runtime_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
                 )
-            elif int(row["value"]) != DATABASE_SCHEMA_VERSION:
-                raise ValueError("Unsupported SAD runtime database schema.")
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS runtime_documents (
+                        namespace TEXT PRIMARY KEY,
+                        document_schema INTEGER NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )"""
+                )
+                row = connection.execute(
+                    "SELECT value FROM runtime_meta WHERE key='database_schema_version'"
+                ).fetchone()
+                if row is None:
+                    connection.execute(
+                        "INSERT INTO runtime_meta(key, value) VALUES('database_schema_version', ?)",
+                        (str(DATABASE_SCHEMA_VERSION),),
+                    )
+                elif int(row["value"]) != DATABASE_SCHEMA_VERSION:
+                    raise ValueError("Unsupported SAD runtime database schema.")
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
         self._restrict_permissions()
 
     def _restrict_permissions(self):
@@ -103,15 +108,15 @@ class RuntimeDatabase:
 
     def has_document(self, namespace):
         namespace = _validate_namespace(namespace)
-        with self.lock, self._connect() as connection:
+        with self.lock, closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT 1 FROM runtime_documents WHERE namespace=?", (namespace,)
             ).fetchone()
-            return row is not None
+        return row is not None
 
     def read_document(self, namespace, default, *, document_schema=1):
         namespace = _validate_namespace(namespace)
-        with self.lock, self._connect() as connection:
+        with self.lock, closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT document_schema, payload_json FROM runtime_documents WHERE namespace=?",
                 (namespace,),
@@ -133,18 +138,22 @@ class RuntimeDatabase:
         payload = _canonical(value)
         if len(payload.encode("utf-8")) > max_bytes:
             raise ValueError(f"Runtime document {namespace} exceeded its storage limit.")
-        with self.lock, self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                """INSERT INTO runtime_documents(namespace, document_schema, payload_json, updated_at)
-                   VALUES(?, ?, ?, ?)
-                   ON CONFLICT(namespace) DO UPDATE SET
-                     document_schema=excluded.document_schema,
-                     payload_json=excluded.payload_json,
-                     updated_at=excluded.updated_at""",
-                (namespace, int(document_schema), payload, _now()),
-            )
-            connection.commit()
+        with self.lock, closing(self._connect()) as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    """INSERT INTO runtime_documents(namespace, document_schema, payload_json, updated_at)
+                       VALUES(?, ?, ?, ?)
+                       ON CONFLICT(namespace) DO UPDATE SET
+                         document_schema=excluded.document_schema,
+                         payload_json=excluded.payload_json,
+                         updated_at=excluded.updated_at""",
+                    (namespace, int(document_schema), payload, _now()),
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
         self._restrict_permissions()
 
     def import_json_document(self, namespace, source, validator, *, document_schema=1, max_bytes=MAX_DOCUMENT_BYTES):
@@ -183,17 +192,16 @@ class RuntimeDatabase:
         return True
 
     def quick_check(self):
-        with self.lock, self._connect() as connection:
+        with self.lock, closing(self._connect()) as connection:
             rows = connection.execute("PRAGMA quick_check").fetchall()
         return bool(rows) and all(row[0] == "ok" for row in rows)
 
     def document_names(self):
-        with self.lock, self._connect() as connection:
-            return [
-                row["namespace"] for row in connection.execute(
-                    "SELECT namespace FROM runtime_documents ORDER BY namespace"
-                ).fetchall()
-            ]
+        with self.lock, closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT namespace FROM runtime_documents ORDER BY namespace"
+            ).fetchall()
+        return [row["namespace"] for row in rows]
 
     def snapshot(self, destination):
         """Create a transactionally consistent standalone SQLite snapshot."""
@@ -203,10 +211,19 @@ class RuntimeDatabase:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix(destination.suffix + ".tmp")
         temporary.unlink(missing_ok=True)
-        with self.lock, self._connect() as source, sqlite3.connect(str(temporary)) as target:
-            source.backup(target)
-            target.execute("PRAGMA quick_check")
-        os.replace(temporary, destination)
+        try:
+            with self.lock, closing(self._connect()) as source:
+                with closing(sqlite3.connect(str(temporary), timeout=5.0)) as target:
+                    source.backup(target)
+                    rows = target.execute("PRAGMA quick_check").fetchall()
+                    if not rows or not all(row[0] == "ok" for row in rows):
+                        raise OSError("SQLite snapshot integrity verification failed.")
+                    target.commit()
+            # Both SQLite handles are closed before Windows is asked to replace the file.
+            os.replace(temporary, destination)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
         try:
             os.chmod(destination, 0o600)
         except OSError:
@@ -219,8 +236,8 @@ class RuntimeDatabase:
         if path.is_symlink() or not path.is_file():
             return False
         try:
-            with sqlite3.connect(str(path)) as connection:
+            with closing(sqlite3.connect(str(path), timeout=5.0)) as connection:
                 rows = connection.execute("PRAGMA quick_check").fetchall()
             return bool(rows) and all(row[0] == "ok" for row in rows)
-        except sqlite3.DatabaseError:
+        except (OSError, sqlite3.DatabaseError):
             return False
