@@ -26,9 +26,15 @@ EVENT_TYPES = frozenset({
     "failure.created",
     "forge.quest.created",
     "forge.quest.completed",
+    "memory.created",
+    "memory.updated",
+    "memory.deleted",
     "platform.client.created",
     "platform.client.rotated",
     "platform.client.revoked",
+    "tool.action.created",
+    "tool.action.decided",
+    "tool.action.completed",
     "voice.turn.completed",
 })
 
