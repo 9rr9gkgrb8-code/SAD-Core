@@ -20,6 +20,7 @@ PRIVATE_RUNTIME_FILES = frozenset({
     "dashboard_state.json",
     "failures.json",
     "memory.json",
+    "mobile_access.json",
     "platform_clients.json",
     "platform_events.json",
     "sad_runtime.sqlite3",
