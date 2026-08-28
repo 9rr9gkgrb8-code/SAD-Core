@@ -32,6 +32,7 @@ LEARNING_EXACT_ROUTES = {
     ("POST", "/v1/auth/password"),
     ("GET", "/v1/chat/sessions"),
     ("POST", "/v1/chat/sessions"),
+    ("POST", "/v1/voice/turn"),
     ("POST", "/v1/study/plan"),
     ("POST", "/v1/forge/quests"),
     ("GET", "/v1/forge/progress"),
@@ -58,7 +59,9 @@ def mobile_host_allowed(host):
 
 
 def mobile_route_allowed(mode, method, path):
-    """Learning devices get only learning/account-self routes; full-role keeps RBAC."""
+    """Learning devices get a narrow user route set; machine-client auth stays loopback-only."""
+    if path.startswith("/v1/platform/client/"):
+        return False
     if mode == "full_role":
         return True
     if mode != "learning":
@@ -124,11 +127,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def _serve_ui(self):
-        mapping = {
-            "/": "index.html",
-            "/manifest.webmanifest": "manifest.webmanifest",
-            "/sw.js": "sw.js",
-        }
+        mapping = {"/": "index.html", "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js"}
         relative = mapping.get(self.path)
         if relative is None and self.path.startswith("/ui/"):
             relative = self.path.removeprefix("/ui/")
@@ -244,11 +243,7 @@ def create_mobile_server(host, port=DEFAULT_MOBILE_PORT, certfile=None, keyfile=
     handler = type(
         "BoundMobileGatewayHandler",
         (MobileGatewayHandler,),
-        {
-            "service": service or SadApiService(),
-            "access": access or MobileAccessStore(),
-            "limiter": PairAttemptLimiter(),
-        },
+        {"service": service or SadApiService(), "access": access or MobileAccessStore(), "limiter": PairAttemptLimiter()},
     )
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
