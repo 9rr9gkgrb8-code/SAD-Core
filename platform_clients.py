@@ -1,4 +1,8 @@
-"""Owner-governed machine credentials for local SAD Platform clients."""
+"""Owner-governed machine credentials for local SAD Platform clients.
+
+Default runtime persistence uses the shared transactional SQLite database. Explicit
+compatibility/test paths may still use the legacy JSON document format.
+"""
 
 from __future__ import annotations
 
@@ -13,19 +17,18 @@ import threading
 import uuid
 
 from platform_events import EVENT_TYPES
+from runtime_database import RuntimeDatabase
 from runtime_privacy import migrate_legacy_private_store, private_store_path
 
 
 LEGACY_CLIENTS_FILE = Path(__file__).with_name("platform_clients.json")
 CLIENTS_FILE = private_store_path("platform_clients.json")
+CLIENTS_NAMESPACE = "platform_clients"
 MAX_CLIENTS_FILE_BYTES = 1_000_000
 MAX_CLIENTS = 100
 MACHINE_CAPABILITIES = frozenset({
-    "platform:discover",
-    "platform:catalog",
-    "platform:modules",
-    "platform:compatibility",
-    "platform:events",
+    "platform:discover", "platform:catalog", "platform:modules",
+    "platform:compatibility", "platform:events",
 })
 
 
@@ -45,28 +48,50 @@ def _public(record):
     return {key: value for key, value in record.items() if key not in {"secret_salt", "secret_hash"}}
 
 
+def _validate_client_data(data):
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("clients"), list):
+        raise ValueError("Unsupported or invalid platform client store.")
+    return data
+
+
 class PlatformClientStore:
     """Persist local app registrations while returning each secret only at creation/rotation."""
 
-    def __init__(self, path=CLIENTS_FILE):
-        self.path = Path(path)
-        if self.path == CLIENTS_FILE:
-            migrate_legacy_private_store(self.path, LEGACY_CLIENTS_FILE)
+    def __init__(self, path=None, database=None):
         self.lock = threading.RLock()
+        self.database = None
+        if path is None:
+            migrate_legacy_private_store(CLIENTS_FILE, LEGACY_CLIENTS_FILE)
+            self.database = database or RuntimeDatabase()
+            if CLIENTS_FILE.exists():
+                self.database.import_json_document(
+                    CLIENTS_NAMESPACE, CLIENTS_FILE, _validate_client_data, max_bytes=MAX_CLIENTS_FILE_BYTES
+                )
+            self.path = self.database.path
+        else:
+            self.path = Path(path)
 
     def _load(self):
+        if self.database is not None:
+            data = self.database.read_document(
+                CLIENTS_NAMESPACE, {"schema_version": 1, "clients": []}, document_schema=1
+            )
+            return _validate_client_data(data)
         if not self.path.exists():
             return {"schema_version": 1, "clients": []}
         if self.path.is_symlink() or not self.path.is_file():
             raise ValueError("Platform client path must be a regular file.")
         if self.path.stat().st_size > MAX_CLIENTS_FILE_BYTES:
             raise ValueError("Platform client file is unexpectedly large.")
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        if data.get("schema_version") != 1 or not isinstance(data.get("clients"), list):
-            raise ValueError("Unsupported or invalid platform client file.")
-        return data
+        return _validate_client_data(json.loads(self.path.read_text(encoding="utf-8")))
 
     def _save(self, data):
+        _validate_client_data(data)
+        if self.database is not None:
+            self.database.write_document(
+                CLIENTS_NAMESPACE, data, document_schema=1, max_bytes=MAX_CLIENTS_FILE_BYTES
+            )
+            return
         encoded = json.dumps(data, indent=2)
         if len(encoded.encode("utf-8")) > MAX_CLIENTS_FILE_BYTES:
             raise ValueError("Platform client registry exceeded its storage limit.")
@@ -119,15 +144,9 @@ class PlatformClientStore:
             raw_secret = secrets.token_urlsafe(32)
             salt, digest = _hash_secret(raw_secret)
             record = {
-                "client_id": client_id,
-                "name": name,
-                "capability_ids": capabilities,
-                "event_types": events,
-                "active": True,
-                "created_at": _now(),
-                "updated_at": _now(),
-                "secret_salt": salt,
-                "secret_hash": digest,
+                "client_id": client_id, "name": name, "capability_ids": capabilities,
+                "event_types": events, "active": True, "created_at": _now(), "updated_at": _now(),
+                "secret_salt": salt, "secret_hash": digest,
             }
             data["clients"].append(record)
             self._save(data)

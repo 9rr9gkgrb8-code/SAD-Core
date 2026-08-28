@@ -1,6 +1,8 @@
 """User-controlled durable memory for SAD accounts.
 
-Memory is explicit local data. SAD never auto-saves conversation text here.
+Memory is explicit local data. SAD never auto-saves conversation text here. The default
+runtime now uses the transactional SAD SQLite database; explicit test/compatibility paths
+may still use the legacy JSON format.
 """
 
 from __future__ import annotations
@@ -12,11 +14,13 @@ from pathlib import Path
 import threading
 import uuid
 
+from runtime_database import RuntimeDatabase
 from runtime_privacy import migrate_legacy_private_store, private_store_path
 
 
 LEGACY_MEMORY_FILE = Path(__file__).with_name("memory.json")
 MEMORY_FILE = private_store_path("memory.json")
+MEMORY_NAMESPACE = "memory"
 MAX_MEMORY_FILE_BYTES = 4_000_000
 MAX_MEMORIES_PER_ACCOUNT = 500
 MAX_MEMORY_CONTENT = 8_000
@@ -51,15 +55,37 @@ def _expiry(value):
     return parsed.isoformat()
 
 
+def _validate_memory_data(data):
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("memories"), dict):
+        raise ValueError("Unsupported or invalid memory store.")
+    return data
+
+
 class MemoryStore:
-    def __init__(self, path=MEMORY_FILE, now=None):
-        self.path = Path(path)
-        if self.path == MEMORY_FILE:
-            migrate_legacy_private_store(self.path, LEGACY_MEMORY_FILE)
+    def __init__(self, path=None, now=None, database=None):
         self.now = now or _now
         self.lock = threading.RLock()
+        self.database = None
+        if path is None:
+            migrate_legacy_private_store(MEMORY_FILE, LEGACY_MEMORY_FILE)
+            self.database = database or RuntimeDatabase()
+            if MEMORY_FILE.exists():
+                self.database.import_json_document(
+                    MEMORY_NAMESPACE,
+                    MEMORY_FILE,
+                    _validate_memory_data,
+                    max_bytes=MAX_MEMORY_FILE_BYTES,
+                )
+            self.path = self.database.path
+        else:
+            self.path = Path(path)
 
     def _load(self):
+        if self.database is not None:
+            data = self.database.read_document(
+                MEMORY_NAMESPACE, {"schema_version": 1, "memories": {}}, document_schema=1
+            )
+            return _validate_memory_data(data)
         if not self.path.exists():
             return {"schema_version": 1, "memories": {}}
         if self.path.is_symlink() or not self.path.is_file():
@@ -67,11 +93,15 @@ class MemoryStore:
         if self.path.stat().st_size > MAX_MEMORY_FILE_BYTES:
             raise ValueError("Memory file is unexpectedly large.")
         data = json.loads(self.path.read_text(encoding="utf-8"))
-        if data.get("schema_version") != 1 or not isinstance(data.get("memories"), dict):
-            raise ValueError("Unsupported or invalid memory file.")
-        return data
+        return _validate_memory_data(data)
 
     def _save(self, data):
+        _validate_memory_data(data)
+        if self.database is not None:
+            self.database.write_document(
+                MEMORY_NAMESPACE, data, document_schema=1, max_bytes=MAX_MEMORY_FILE_BYTES
+            )
+            return
         encoded = json.dumps(data, indent=2, ensure_ascii=False)
         if len(encoded.encode("utf-8")) > MAX_MEMORY_FILE_BYTES:
             raise ValueError("Memory storage limit reached.")

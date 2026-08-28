@@ -1,7 +1,8 @@
 """Executable adversarial security gate for SAD.
 
-Runs a focused security slice without subprocesses or network access. The normal full
-suite still runs separately in CI; Protocol Black is an additional fail-closed gate.
+Runs a focused security slice without subprocesses or external network access. The
+normal full suite still runs separately in CI; Protocol Black is an additional
+fail-closed gate.
 """
 
 from __future__ import annotations
@@ -22,6 +23,11 @@ BLACK_TEST_MODULES = (
     "test_platform_events",
     "test_memory_store",
     "test_tool_actions",
+    "test_runtime_database",
+    "test_runtime_persistence",
+    "test_backup_recovery",
+    "test_voice_runtime",
+    "test_windows_doctor",
     "test_developer_workspace",
     "test_developer_workspace_api",
     "test_live_repair",
