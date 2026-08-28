@@ -30,6 +30,8 @@ jobs:
           node --check web/sw.js
       - name: Full suite
         run: python -m unittest -v
+      - name: Protocol Black
+        run: python protocol_black.py
       - name: Alpha release gate
         run: python release_gate.py
       - name: Alpha operator preflight
