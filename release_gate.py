@@ -14,6 +14,7 @@ REQUIRED_PATHS = (
     "MOBILE.md",
     "PLATFORM.md",
     "PLATFORM_SDK.md",
+    "PLATFORM_TIER2_UAT.md",
     "SECURITY.md",
     "alpha.py",
     "alpha_doctor.py",
