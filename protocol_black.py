@@ -26,6 +26,7 @@ BLACK_TEST_MODULES = (
     "test_runtime_database",
     "test_runtime_persistence",
     "test_backup_recovery",
+    "test_windows_crypto",
     "test_voice_runtime",
     "test_windows_doctor",
     "test_developer_workspace",
