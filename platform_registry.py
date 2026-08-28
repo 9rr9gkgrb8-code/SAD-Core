@@ -1,8 +1,7 @@
-"""Declarative platform registry for SAD Core.
+"""Declarative capability registry for the SAD local AI platform.
 
-Platform modules describe capabilities and routes; registry metadata never executes
-module code or grants authority. Existing authentication/RBAC remains the enforcement
-layer for every concrete endpoint.
+Registry metadata is descriptive. It never executes extension code, grants runtime
+authority, or replaces endpoint-level authentication and authorization.
 """
 
 from __future__ import annotations
@@ -11,8 +10,18 @@ from dataclasses import asdict, dataclass
 from typing import Iterable
 
 
-PLATFORM_VERSION = "0.1-alpha"
-PLATFORM_SCHEMA_VERSION = 1
+PLATFORM_VERSION = "0.2-alpha"
+PLATFORM_SCHEMA_VERSION = 2
+CAPABILITY_LIFECYCLES = {"alpha", "stable", "deprecated"}
+
+
+def _version_tuple(value):
+    if not isinstance(value, str):
+        raise ValueError("Capability version must be text.")
+    parts = value.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError("Capability version must use numeric major.minor.patch format.")
+    return tuple(int(part) for part in parts)
 
 
 @dataclass(frozen=True)
@@ -33,6 +42,9 @@ class PlatformCapability:
     routes: tuple[PlatformRoute, ...]
     mutates_state: bool = False
     human_approval_boundary: bool = False
+    capability_version: str = "1.0.0"
+    lifecycle: str = "alpha"
+    replacement: str | None = None
 
     def to_dict(self):
         return {
@@ -43,6 +55,9 @@ class PlatformCapability:
             "routes": [route.to_dict() for route in self.routes],
             "mutates_state": self.mutates_state,
             "human_approval_boundary": self.human_approval_boundary,
+            "capability_version": self.capability_version,
+            "lifecycle": self.lifecycle,
+            "replacement": self.replacement,
         }
 
 
@@ -54,6 +69,7 @@ class PlatformModule:
     kind: str
     capabilities: tuple[PlatformCapability, ...]
     status: str = "available"
+    module_version: str = "1.0.0"
 
     def to_dict(self, allowed_capabilities=None):
         allowed = set(allowed_capabilities) if allowed_capabilities is not None else None
@@ -67,6 +83,7 @@ class PlatformModule:
             "description": self.description,
             "kind": self.kind,
             "status": self.status,
+            "module_version": self.module_version,
             "capabilities": capabilities,
         }
 
@@ -75,16 +92,20 @@ def _route(method, path):
     return PlatformRoute(method, path)
 
 
-def _cap(capability_id, title, description, permission, routes, *, mutates=False, approval=False):
+def _cap(
+    capability_id, title, description, permission, routes, *,
+    mutates=False, approval=False, version="1.0.0", lifecycle="alpha", replacement=None,
+):
     return PlatformCapability(
         capability_id, title, description, permission, tuple(routes), mutates, approval,
+        version, lifecycle, replacement,
     )
 
 
 BUILTIN_MODULES = (
     PlatformModule(
         "sad.platform", "SAD Platform Core",
-        "Discovers the platform, modules, capabilities, versions, and signed-in access surface.",
+        "Discovers capabilities, negotiates versions, manages local app trust, and exposes metadata-only events.",
         "core",
         (
             _cap("platform:discover", "Discover platform", "Read the signed-in platform manifest.", None,
@@ -93,7 +114,16 @@ BUILTIN_MODULES = (
                  (_route("GET", "/v1/platform/capabilities"),)),
             _cap("platform:modules", "Browse modules", "Read modules visible to the signed-in account.", None,
                  (_route("GET", "/v1/platform/modules"),)),
+            _cap("platform:compatibility", "Negotiate compatibility", "Check required capability versions before using a client.", None,
+                 (_route("POST", "/v1/platform/compatibility"),)),
+            _cap("platform:clients", "Manage local apps", "Create, rotate, list, and revoke scoped machine credentials.", "platform:manage",
+                 (_route("GET", "/v1/platform/clients"), _route("POST", "/v1/platform/clients"),
+                  _route("POST", "/v1/platform/clients/{client_id}/rotate"),
+                  _route("POST", "/v1/platform/clients/{client_id}/revoke")), mutates=True, approval=True),
+            _cap("platform:events", "Read platform events", "Read privacy-minimized platform event metadata.", "platform:manage",
+                 (_route("POST", "/v1/platform/events/read"),)),
         ),
+        module_version="2.0.0",
     ),
     PlatformModule(
         "sad.chat", "SAD Chat",
@@ -108,12 +138,21 @@ BUILTIN_MODULES = (
         ),
     ),
     PlatformModule(
+        "sad.voice", "Voice Client Bridge",
+        "Signed-in transcript-to-SAD conversation contract for future local speech input/output clients.",
+        "gateway",
+        (
+            _cap("voice:conversation", "Voice conversation bridge", "Submit a speech transcript and receive SAD reply text for local synthesis.", None,
+                 (_route("POST", "/v1/voice/turn"),), mutates=True),
+        ),
+    ),
+    PlatformModule(
         "sad.study", "Personal Study",
         "Request-directed learning, writing, checking, and explanation assistance.",
         "experience",
         (
             _cap("study:personal", "Personal study", "Generate study help for the signed-in account.", "study:personal",
-                 (_route("POST", "/v1/study/plan"),), mutates=False),
+                 (_route("POST", "/v1/study/plan"),)),
         ),
     ),
     PlatformModule(
@@ -195,6 +234,7 @@ class PlatformRegistry:
             if module.module_id in module_ids:
                 raise ValueError(f"Duplicate platform module: {module.module_id}")
             module_ids.add(module.module_id)
+            _version_tuple(module.module_version)
             if module.kind not in {"core", "experience", "development", "gateway", "extension"}:
                 raise ValueError(f"Unsupported platform module kind: {module.kind}")
             if not module.capabilities:
@@ -203,6 +243,11 @@ class PlatformRegistry:
                 if capability.capability_id in capability_ids:
                     raise ValueError(f"Duplicate platform capability: {capability.capability_id}")
                 capability_ids.add(capability.capability_id)
+                _version_tuple(capability.capability_version)
+                if capability.lifecycle not in CAPABILITY_LIFECYCLES:
+                    raise ValueError(f"Invalid capability lifecycle: {capability.capability_id}")
+                if capability.lifecycle == "deprecated" and not capability.replacement:
+                    raise ValueError(f"Deprecated capability requires a replacement: {capability.capability_id}")
                 if not capability.routes:
                     raise ValueError(f"Capability has no routes: {capability.capability_id}")
                 for route in capability.routes:
@@ -234,6 +279,31 @@ class PlatformRegistry:
                 modules.append(module.to_dict(visible))
         return modules
 
+    def compatibility(self, requirements, allowed_capability_ids):
+        if not isinstance(requirements, list) or len(requirements) > 100:
+            raise ValueError("requirements must be a list of at most 100 entries.")
+        allowed = set(allowed_capability_ids)
+        results = []
+        for requirement in requirements:
+            if not isinstance(requirement, dict):
+                raise ValueError("Each compatibility requirement must be an object.")
+            capability_id = requirement.get("capability_id")
+            minimum = requirement.get("min_version", "0.0.0")
+            _version_tuple(minimum)
+            capability = self.capabilities.get(capability_id)
+            visible = capability is not None and capability_id in allowed
+            compatible = visible and _version_tuple(capability.capability_version) >= _version_tuple(minimum)
+            results.append({
+                "capability_id": capability_id,
+                "min_version": minimum,
+                "available": visible,
+                "compatible": compatible,
+                "available_version": capability.capability_version if visible else None,
+                "lifecycle": capability.lifecycle if visible else None,
+                "replacement": capability.replacement if visible else None,
+            })
+        return {"compatible": all(item["compatible"] for item in results), "requirements": results}
+
     def manifest(self, role, permissions, api_version="v1"):
         modules = self.visible_modules(permissions)
         capabilities = [cap for module in modules for cap in module["capabilities"]]
@@ -248,8 +318,10 @@ class PlatformRegistry:
             "modules": modules,
             "authority_model": {
                 "authentication": "local_account_session",
-                "authorization": "role_permissions",
+                "machine_authentication": "scoped_sad_app_secret",
+                "authorization": "role_permissions_and_client_scopes",
                 "platform_metadata_grants_authority": False,
+                "dynamic_extension_execution": False,
                 "git_authority": "human_host_only",
             },
         }
