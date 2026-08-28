@@ -31,6 +31,7 @@ from portable_runtime import (
 )
 from runtime_database import AT_REST_SCHEME, RUNTIME_DB_FILE, RuntimeDatabase
 from runtime_privacy import PRIVATE_RUNTIME_FILES, ROOT
+from sqlite_bytes import verify_sqlite_bytes
 from windows_crypto import protect_data, unprotect_data
 
 
@@ -223,7 +224,7 @@ def _verify_plain_backup_bytes(raw):
             if relative == f"local_data/{RUNTIME_DB_FILE.name}":
                 if runtime_mode == RUNTIME_MODE_PORTABLE:
                     verify_portable_runtime_bytes(data)
-                elif not RuntimeDatabase.verify_snapshot_bytes(data):
+                elif not verify_sqlite_bytes(data):
                     raise ValueError("Runtime database snapshot failed SQLite integrity verification.")
         if set(names) != expected_names:
             raise ValueError("Backup contains files not declared by its manifest.")
@@ -316,10 +317,6 @@ def encrypt_legacy_backup(source, destination):
     protected = BACKUP_DPAPI_MAGIC + protect_data(raw, purpose=BACKUP_DPAPI_PURPOSE)
     _atomic_backup_write(destination, protected)
     return verify_backup(destination)
-
-
-def _portable_runtime_entry(relative, data):
-    return relative == f"local_data/{RUNTIME_DB_FILE.name}", data
 
 
 def restore_backup(
