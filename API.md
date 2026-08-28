@@ -10,12 +10,12 @@ the normal SAD API remains on loopback.
 
 ## Core endpoints
 
-- `GET /health` — minimal service health plus API/platform versions
+- `GET /health` — established minimal `{status, api_version}` health contract
 - `POST /v1/auth/login`
 - `GET /v1/auth/me`
 - `POST /v1/auth/logout`
 - `POST /v1/auth/password`
-- `GET /v1/platform` — signed-in role-filtered SAD platform manifest
+- `GET /v1/platform` — signed-in role-filtered SAD platform manifest and platform version
 - `GET /v1/platform/modules` — modules visible to the signed-in role
 - `GET /v1/platform/capabilities` — flattened capability catalog visible to the signed-in role
 - `GET /v1/chat/sessions` — list the signed-in account's active conversations
@@ -160,7 +160,7 @@ creates a user session and never substitutes for SAD role authorization.
 
 ### Mobile device modes
 
-- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix. Developer Workspace and Platform administration surfaces are denied.
+- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix. Developer Workspace and Platform development surfaces are denied.
 - `full_role`: the gateway admits the normal API surface, then SAD's existing RBAC
   decides what the signed-in role may actually do. An Owner can use Code Workspace
   and the read-only Platform dashboard; a Developer can prepare/test but still cannot
