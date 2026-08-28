@@ -48,7 +48,7 @@ ROLE_PERMISSIONS = {
         "study:personal", "forge:play", "progress:own", "progress:students",
         "account:create_student", "account:create_teacher", "account:create_developer",
         "account:create_reviewer", "account:create_viewer",
-        "account:list", "account:manage",
+        "account:list", "account:manage", "platform:manage",
         "development:view", "development:review", "development:work",
         "development:work_assigned", "development:decide", "development:govern",
     },
@@ -63,7 +63,7 @@ def _normalized_username(username):
     if not isinstance(username, str):
         raise ValueError("Username must be text.")
     value = username.strip().lower()
-    if not 3 <= len(value) <= 64 or not all(character.isalnum() or character in "._-" for character in value):
+    if not 3 <= len(value) <= 64 or not all(character.isalnum() or character in ".-_" for character in value):
         raise ValueError("Username must be 3-64 characters using letters, numbers, dot, dash, or underscore.")
     return value
 
