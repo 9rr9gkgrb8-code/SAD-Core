@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import ipaddress
 import json
 import mimetypes
@@ -16,6 +16,7 @@ import ssl
 import threading
 
 from api import MAX_REQUEST_BYTES, SadApiService
+from bounded_http import BoundedThreadingHTTPServer
 from mobile_access import DEVICE_DAYS, MobileAccessStore
 from request_security import validate_browser_request
 
@@ -266,8 +267,9 @@ def create_mobile_server(host, port=DEFAULT_MOBILE_PORT, certfile=None, keyfile=
             "expected_hostname": host,
         },
     )
-    server = ThreadingHTTPServer((host, port), handler)
-    server.daemon_threads = True
+    server = BoundedThreadingHTTPServer(
+        (host, port), handler, max_concurrent_requests=32, connection_timeout=15,
+    )
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certfile=str(certificate), keyfile=str(private_key))
