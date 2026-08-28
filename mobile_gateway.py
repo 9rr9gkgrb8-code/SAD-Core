@@ -17,13 +17,19 @@ import threading
 
 from api import MAX_REQUEST_BYTES, SadApiService
 from mobile_access import DEVICE_DAYS, MobileAccessStore
+from request_security import validate_browser_request
 
 
 DEFAULT_MOBILE_PORT = 8766
 PAIR_FAILURE_LIMIT = 10
 PAIR_FAILURE_WINDOW_MINUTES = 5
 DEVICE_COOKIE = "SAD_DEVICE"
-TRUSTED_SHARED_V4 = ipaddress.ip_network("100.64.0.0/10")
+TRUSTED_PRIVATE_V4 = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+)
 LEARNING_EXACT_ROUTES = {
     ("GET", "/health"),
     ("POST", "/v1/auth/login"),
@@ -56,14 +62,14 @@ def _now():
 
 
 def mobile_host_allowed(host):
-    """Allow one explicit private/overlay IPv4 address, never wildcard or public."""
+    """Allow one explicit RFC1918/CGNAT IPv4 address, never wildcard/public/reserved."""
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
         return False
-    if address.version != 4 or address.is_unspecified or address.is_loopback or address.is_multicast:
+    if address.version != 4:
         return False
-    return address.is_private or address in TRUSTED_SHARED_V4
+    return any(address in network for network in TRUSTED_PRIVATE_V4)
 
 
 def mobile_route_allowed(mode, method, path):
@@ -118,6 +124,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
     service = None
     access = None
     limiter = None
+    expected_hostname = None
 
     def _respond(self, status, payload, extra_headers=None):
         encoded = json.dumps(payload).encode("utf-8")
@@ -127,6 +134,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         for key, value in (extra_headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
@@ -158,6 +166,7 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         if target.name == "sw.js":
             self.send_header("Service-Worker-Allowed", "/")
@@ -199,6 +208,9 @@ class MobileGatewayHandler(BaseHTTPRequestHandler):
         try:
             if self.command == "GET" and (self.path in {"/", "/manifest.webmanifest", "/sw.js"} or self.path.startswith("/ui/")):
                 return self._serve_ui()
+            validate_browser_request(
+                self.headers, self.command, expected_scheme="https", expected_hostname=self.expected_hostname,
+            )
             if self.command == "GET" and self.path == "/mobile/status":
                 return self._respond(200, {"device": self._paired_device()})
             body = self._body()
@@ -240,14 +252,19 @@ def _validated_tls_file(value, label):
 
 def create_mobile_server(host, port=DEFAULT_MOBILE_PORT, certfile=None, keyfile=None, service=None, access=None):
     if not mobile_host_allowed(host):
-        raise ValueError("Mobile gateway must bind to one explicit private/overlay IPv4 address.")
+        raise ValueError("Mobile gateway must bind to one explicit RFC1918/approved-overlay IPv4 address.")
     if not certfile or not keyfile:
         raise ValueError("Mobile gateway requires a TLS certificate and private key.")
     certificate = _validated_tls_file(certfile, "TLS certificate")
     private_key = _validated_tls_file(keyfile, "TLS private key")
     handler = type(
         "BoundMobileGatewayHandler", (MobileGatewayHandler,),
-        {"service": service or SadApiService(), "access": access or MobileAccessStore(), "limiter": PairAttemptLimiter()},
+        {
+            "service": service or SadApiService(),
+            "access": access or MobileAccessStore(),
+            "limiter": PairAttemptLimiter(),
+            "expected_hostname": host,
+        },
     )
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
