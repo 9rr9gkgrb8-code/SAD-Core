@@ -4,7 +4,7 @@
   const escapeText=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const apiCall=(path,options={})=>window.api(path,options);
   const MACHINE_CAPABILITIES=["platform:discover","platform:catalog","platform:modules","platform:compatibility","platform:events"];
-  const EVENT_TYPES=["chat.session.created","chat.message.created","chat.session.archived","development.workspace.created","development.workspace.executed","development.workspace.applied","development.workspace.rolled_back","failure.created","forge.quest.created","forge.quest.completed","platform.client.created","platform.client.rotated","platform.client.revoked","voice.turn.completed"];
+  const EVENT_TYPES=["chat.session.created","chat.message.created","chat.session.archived","development.workspace.created","development.workspace.executed","development.workspace.applied","development.workspace.rolled_back","failure.created","forge.quest.created","forge.quest.completed","memory.created","memory.updated","memory.deleted","platform.client.created","platform.client.rotated","platform.client.revoked","tool.action.created","tool.action.decided","tool.action.completed","voice.turn.completed"];
 
   function markup(){
     const section=document.createElement("section");
@@ -13,7 +13,7 @@
     section.hidden=true;
     section.innerHTML=`
       <div class="platform-heading">
-        <div><p class="eyebrow">SAD PLATFORM</p><h2 tabindex="-1">Platform Core</h2><p class="muted">One governed capability catalog for SAD Chat, Study, Forge, Mobile, Repair, Coding, accounts, Voice, and local apps.</p></div>
+        <div><p class="eyebrow">SAD PLATFORM</p><h2 tabindex="-1">Platform Core</h2><p class="muted">One governed capability catalog for Chat, Memory, Tools, Study, Forge, Voice, Mobile, Coding, Repair, accounts, and local apps.</p></div>
         <button id="refresh-platform" class="secondary" type="button">Refresh</button>
       </div>
       <div id="platform-summary" class="platform-summary" aria-live="polite"></div>
@@ -24,7 +24,7 @@
         <form id="platform-app-form" class="platform-app-form">
           <label>App name<input id="platform-app-name" name="name" maxlength="80" required placeholder="Workshop status panel"></label>
           <fieldset><legend>Machine scopes</legend><div id="platform-capability-options" class="platform-check-grid"></div></fieldset>
-          <fieldset><legend>Event subscriptions</legend><p class="muted">Subscriptions work only when <code>platform:events</code> is selected.</p><div id="platform-event-options" class="platform-check-grid platform-events-grid"></div></fieldset>
+          <fieldset><legend>Event subscriptions</legend><p class="muted">Subscriptions work only when <code>platform:events</code> is selected. Memory/tool events expose metadata only, never private content or arguments.</p><div id="platform-event-options" class="platform-check-grid platform-events-grid"></div></fieldset>
           <button type="submit">Create local app credential</button>
         </form>
         <div id="platform-secret-panel" class="platform-secret" hidden role="status" aria-live="polite"><strong>Copy this secret now</strong><p>SAD stores only a hash. This value cannot be retrieved later.</p><code id="platform-secret"></code></div>
