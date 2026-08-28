@@ -13,9 +13,11 @@ import threading
 import uuid
 
 from platform_events import EVENT_TYPES
+from runtime_privacy import migrate_legacy_private_store, private_store_path
 
 
-CLIENTS_FILE = Path(__file__).with_name("platform_clients.json")
+LEGACY_CLIENTS_FILE = Path(__file__).with_name("platform_clients.json")
+CLIENTS_FILE = private_store_path("platform_clients.json")
 MAX_CLIENTS_FILE_BYTES = 1_000_000
 MAX_CLIENTS = 100
 MACHINE_CAPABILITIES = frozenset({
@@ -32,6 +34,8 @@ def _now():
 
 
 def _hash_secret(secret, salt=None):
+    if not isinstance(secret, str) or not secret:
+        raise ValueError("Client secret must be non-empty text.")
     salt_bytes = secrets.token_bytes(16) if salt is None else bytes.fromhex(salt)
     digest = hashlib.sha256(salt_bytes + secret.encode("utf-8")).hexdigest()
     return salt_bytes.hex(), digest
@@ -46,11 +50,15 @@ class PlatformClientStore:
 
     def __init__(self, path=CLIENTS_FILE):
         self.path = Path(path)
+        if self.path == CLIENTS_FILE:
+            migrate_legacy_private_store(self.path, LEGACY_CLIENTS_FILE)
         self.lock = threading.RLock()
 
     def _load(self):
         if not self.path.exists():
             return {"schema_version": 1, "clients": []}
+        if self.path.is_symlink() or not self.path.is_file():
+            raise ValueError("Platform client path must be a regular file.")
         if self.path.stat().st_size > MAX_CLIENTS_FILE_BYTES:
             raise ValueError("Platform client file is unexpectedly large.")
         data = json.loads(self.path.read_text(encoding="utf-8"))
