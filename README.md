@@ -1,25 +1,55 @@
 # SAD — Sandbox Adaptive Dialogue
 
-SAD is a local Python dialogue assistant with a human-controlled repair engine.
+SAD is a local-first AI platform with human-controlled authority boundaries.
 
-## Public SAD Core
+Its current Alpha combines one authenticated API, browser/mobile clients, general AI
+conversation, Personal Study, Forge learning, failure/repair governance, and a
+multi-file Developer Workspace. Platform Core gives those surfaces one discoverable
+module/capability contract instead of treating them as unrelated features.
 
-The GitHub project can contain:
+## Platform Core
 
-- Application code and automated tests
-- Generic dialogue and safety rules
-- Sandbox-only repair workflow
-- Public documentation and example configuration
+`platform_registry.py` defines the declarative SAD platform catalog.
 
-The repair engine follows this sequence:
+After normal sign-in, clients can discover the capabilities available to the current
+role through:
 
-`failure report → human approval → repeated evidence → repair plan → sandbox draft → tests → human approval → manual patch export → validation`
+- `GET /v1/platform`
+- `GET /v1/platform/modules`
+- `GET /v1/platform/capabilities`
 
-SAD does not apply changes to its live files automatically.
+Current built-in platform modules are:
+
+- **SAD Platform Core** — discovery/version/capability contract
+- **SAD Chat** — free-form multi-turn local AI conversation
+- **Personal Study** — request-directed learning and writing assistance
+- **Forge Learning** — quests, hints, mastery, XP, ranks, companion progression
+- **Developer Workspace** — scoped multi-file coding and Docker verification
+- **Accounts & Roles** — local identity, RBAC, account/device administration
+- **Mobile Gateway** — paired TLS phone access while core API stays loopback-only
+
+Platform metadata is descriptive only. A manifest cannot grant permissions, execute a
+plugin, approve a repair, apply code, or gain Git authority. Concrete endpoints still
+enforce the existing SAD authentication/RBAC/workflow checks.
+
+See `PLATFORM.md` for the Platform Core contract.
+
+## Controlled repair and coding
+
+Failure-driven repair follows:
+
+`failure → human triage → scoped repair draft → isolated Docker tests → exact diff → Owner YES/NO → verified local apply/rollback`
+
+General coding follows:
+
+`task → scope suggestion → human-approved files → private multi-file workspace → local AI edits → Docker tests → exact diff → Owner apply/rollback`
+
+Forge/coding agents do not receive Git commit, push, fetch, rebase, merge, branch, or
+credential authority. Repository publication remains host/human controlled.
 
 ## Learning package
 
-SAD Core now includes two separate learning experiences:
+SAD includes two separate learning experiences:
 
 - `personal_study.py` follows the learner's request directly: problem breakdowns,
   method teaching, walkthroughs, work checking, hints, direct answers when asked,
@@ -29,86 +59,97 @@ SAD Core now includes two separate learning experiences:
   mastery-gated XP and ranks, companion progression, and boss checks. Homework is
   preserved as a challenge rather than silently replaced with an answer.
 
+## SAD Chat
+
+SAD Chat is the platform's general conversation lane. Chats are private to the signed-in
+account, persist locally across restarts, and use recent conversational context. When
+the configured loopback local model is available the UI reports **Local AI**; otherwise
+it reports the limited **Built-in dialogue** fallback rather than pretending the full
+model answered.
+
+Conversation text itself carries no repair, file, shell, approval, or Git authority.
+
 ## Failure and development control
 
-`failure_dashboard.py` provides one shared owner/developer workflow. SAD, Forge,
-tests, and users may automatically submit normalized evidence to the Failure Inbox.
-Duplicate signatures merge their evidence. Detection never starts development:
-only an explicit owner action can create one development work item or approve
-isolated work. Future developers use the same workflow without owner governance.
+`failure_dashboard.py` provides the shared owner/developer workflow. SAD, Forge, tests,
+and users may submit normalized evidence to the Failure Inbox. Duplicate signatures
+merge evidence. Detection does not start development by itself; governed actions remain
+role-checked and explicit.
+
+`developer_workspace.py` adds general-purpose multi-file coding in a private `.sad_dev`
+copy. Developer can prepare/test; only Owner governance can apply or roll back the
+exact tested file set.
 
 ## Local accounts and login
 
-`auth.py` provides local student, teacher, owner, and future developer accounts.
+`auth.py` provides local student, teacher, owner, developer, reviewer, and viewer roles.
 Passwords are salted and hashed with PBKDF2, repeated failures temporarily lock an
-account, sessions expire and can be revoked, and role permissions protect owner
-governance. The first owner requires an explicit local bootstrap approval. After
-that, owners can create teachers and developers; teachers may create students.
-Runtime account data is stored in ignored `accounts.json` and must never be
-committed to the public repository.
+account, sessions expire and can be revoked, and role permissions protect governance.
+The first owner requires explicit local bootstrap approval.
+
+Runtime account data is stored in ignored `accounts.json` and must never be committed.
 
 ## Isolation hardening
 
-Sandbox execution validates the resolved proposal path, fingerprints the live
-project and protected Git topology before and after execution, removes Git
-credentials from the worker environment, checks context root against execution
-root, and records ordered evidence. Any integrity or authority failure blocks
-approval with `isolation_failed`. Git operations remain host/human controlled.
-Production verification additionally requires Docker and a preloaded digest-pinned
-image configured through `SAD_SANDBOX_IMAGE`. Missing runtime configuration records
-`isolation_unavailable`; SAD never falls back to same-user Python execution.
+Repair and Developer Workspace verification require Docker plus a preloaded,
+digest-pinned image configured through `SAD_SANDBOX_IMAGE`. Execution is networkless,
+non-root, resource-limited, stripped of Git credentials, and denied Git control
+metadata. Missing isolation fails closed; SAD does not fall back to same-user repair
+execution.
 
-## Local Data
+Live apply rechecks source/test hashes, preserves backups, and performs verified
+rollback when a transaction fails.
+
+## Mobile
+
+`mobile.py` provides an optional paired TLS phone gateway. The normal SAD API stays
+loopback-only. Phones require both device pairing and normal SAD login. Learning-only
+devices receive a narrow Study/Forge/Chat route set; full-role devices still receive
+only the signed-in user's normal RBAC authority.
+
+See `MOBILE.md` for host/TLS setup and phone UAT.
+
+## Local data
 
 The following stay on the computer and are ignored by Git:
 
-- `settings.json` — saved name and dialogue level
-- `failures.json` — local failure reports
-- `.sad_sandbox/` — isolated drafts and exported patches
-- `local_data/` — optional preferences and memory notes
-- `.env` — local environment values, such as a model configuration
+- `settings.json`
+- `failures.json`
+- `accounts.json`
+- `dashboard_state.json`
+- `student_progress.json`
+- `chat_history.json`
+- `.sad_sandbox/`
+- `.sad_dev/`
+- `local_data/`
+- `.env`
 
-To create local preferences, make a `local_data` folder, copy
-`local_preferences.example.json` into it as `preferences.json`, and edit your
-local copy. Do not commit the `local_data` folder.
-
-## Visible dialogue levels
-
-- `0` — Business
-- `1` — Warm
-- `2` — Playful
-
-## Useful commands
-
-- `help` — show all commands
-- `repair status` — group saved failure patterns
-- `repair candidates` — show patterns with two human-approved reports
-- `repair plans` — show sandbox-only plans for those candidates
-- `draft correction` — make a reviewable change only in a sandbox
-- `validate proposal` — check an approved patch without applying it
+Do not commit runtime data or private backups.
 
 ## Run SAD
 
-```powershell
-python app.py
-```
-
-For the Alpha 1 browser product, including first-time owner setup, run:
+For the Alpha browser product, including first-time Owner setup:
 
 ```powershell
 python alpha.py
 ```
 
-Then open `http://127.0.0.1:8765/`. See `ALPHA1.md` for role surfaces,
-private-data backups, model configuration, and the local-only release boundary.
+Then open `http://127.0.0.1:8765/`.
 
-Run the loopback-only JSON API after local owner setup:
+For paired mobile mode after the required private-address/TLS setup:
+
+```powershell
+python mobile.py
+```
+
+For the loopback-only JSON API:
 
 ```powershell
 python api.py
 ```
 
-See `API.md` for the stable v1 endpoints and role requirements.
+See `ALPHA1.md`, `API.md`, `PLATFORM.md`, `SECURITY.md`, and `ALPHA_UAT.md` for the
+current release contract.
 
 ## Run tests
 
