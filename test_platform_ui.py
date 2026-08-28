@@ -14,17 +14,29 @@ class PlatformUiTests(unittest.TestCase):
         cls.mobile_js = (WEB / "mobile.js").read_text(encoding="utf-8")
         cls.sw = (WEB / "sw.js").read_text(encoding="utf-8")
 
-    def test_platform_surface_is_loaded_and_read_only(self):
+    def test_platform_surface_is_loaded_and_discovery_stays_descriptive(self):
         self.assertIn('/ui/platform.js', self.mobile_js)
         self.assertIn('/ui/platform.css', self.mobile_js)
         self.assertIn('button.textContent="SAD Platform"', self.platform_js)
         self.assertIn('apiCall("/v1/platform")', self.platform_js)
-        self.assertNotIn('method:"POST"', self.platform_js)
-
-    def test_platform_ui_describes_authority_boundary(self):
         self.assertIn('Platform discovery is descriptive only', self.platform_js)
         self.assertIn('never grants permissions', self.platform_js)
+
+    def test_owner_app_management_is_explicit_and_secret_is_one_time(self):
+        self.assertIn('id="platform-app-admin"', self.platform_js)
+        self.assertIn('apiCall("/v1/platform/clients"', self.platform_js)
+        self.assertIn('method:"POST"', self.platform_js)
+        self.assertIn('Copy this secret now', self.platform_js)
+        self.assertIn('stores only a hash', self.platform_js)
+        self.assertNotIn('localStorage.setItem("platform', self.platform_js)
+        self.assertNotIn('sessionStorage.setItem("platform', self.platform_js)
+
+    def test_platform_ui_shows_versions_events_and_authority_boundary(self):
+        self.assertIn('capability.capability_version', self.platform_js)
+        self.assertIn('capability.lifecycle', self.platform_js)
+        self.assertIn('/v1/platform/events/read', self.platform_js)
         self.assertIn('human approval', self.platform_js)
+        self.assertIn('impersonates a person', self.platform_js)
 
     def test_platform_nav_is_limited_to_development_roles(self):
         self.assertIn('["owner","developer","reviewer","viewer"]', self.platform_js)
@@ -34,6 +46,7 @@ class PlatformUiTests(unittest.TestCase):
         self.assertIn('tabindex="-1"', self.platform_js)
         self.assertIn('role="status"', self.platform_js)
         self.assertIn('aria-live="polite"', self.platform_js)
+        self.assertIn('<fieldset><legend>Machine scopes</legend>', self.platform_js)
         self.assertIn('@media(max-width:850px)', self.platform_css)
         self.assertIn('min-height:44px', self.platform_css)
 
@@ -41,7 +54,8 @@ class PlatformUiTests(unittest.TestCase):
         self.assertIn('/ui/platform.js', self.sw)
         self.assertIn('/ui/platform.css', self.sw)
         self.assertIn('url.pathname.startsWith("/v1/")', self.sw)
-        self.assertNotIn('/v1/platform', self.sw)
+        self.assertNotIn('/v1/platform/clients', self.sw)
+        self.assertNotIn('/v1/platform/events', self.sw)
 
 
 if __name__ == "__main__":
