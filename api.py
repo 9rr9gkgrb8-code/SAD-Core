@@ -1,13 +1,14 @@
 """Loopback-only stable HTTP/JSON API for the SAD local AI platform."""
 
 from dataclasses import asdict
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 import mimetypes
 from pathlib import Path
 import re
 
 from auth import AuthService, ROLE_PERMISSIONS
+from bounded_http import BoundedThreadingHTTPServer
 from conversation import ConversationStore, generate_chat_reply
 from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
@@ -501,9 +502,9 @@ def create_server(host="127.0.0.1", port=8765, service=None):
     if host not in LOOPBACK_HOSTNAMES:
         raise ValueError("SAD API may bind only to loopback.")
     handler = type("BoundSadApiHandler", (SadApiHandler,), {"service": service or SadApiService()})
-    server = ThreadingHTTPServer((host, port), handler)
-    server.daemon_threads = True
-    return server
+    return BoundedThreadingHTTPServer(
+        (host, port), handler, max_concurrent_requests=64, connection_timeout=15,
+    )
 
 
 def main():
