@@ -95,7 +95,8 @@ class PlatformEventStore:
     def _load(self):
         if self.database is not None:
             data = self.database.read_document(
-                EVENTS_NAMESPACE, {"schema_version": 1, "next_seq": 1, "events": {} if False else []},
+                EVENTS_NAMESPACE,
+                {"schema_version": 1, "next_seq": 1, "events": []},
                 document_schema=1,
             )
             return _validate_event_data(data)
