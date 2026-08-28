@@ -37,10 +37,12 @@ class ReleaseGateTests(unittest.TestCase):
             "chat_history.json",
             "dashboard_state.json",
             "failures.json",
+            "memory.json",
             "platform_clients.json",
             "platform_events.json",
             "settings.json",
             "student_progress.json",
+            "tool_actions.json",
         ):
             (self.root / name).write_text(f'{{"private_note":"{marker}"}}\n', encoding="utf-8")
         dev = self.root / ".sad_dev" / "workspace" / "private.json"
