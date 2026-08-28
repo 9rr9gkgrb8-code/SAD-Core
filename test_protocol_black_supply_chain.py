@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parent
 CHECKOUT_SHA = "11d5960a326750d5838078e36cf38b85af677262"
 SETUP_PYTHON_SHA = "a26af69be951a213d495a4c3e4e4022e16d87065"
 SANDBOX_DIGEST = "1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6"
+CRYPTOGRAPHY_PIN = "cryptography==50.0.1"
 
 
 class ProtocolBlackSupplyChainTests(unittest.TestCase):
@@ -26,6 +27,13 @@ class ProtocolBlackSupplyChainTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertRegex(workflow, r"permissions:\s*\n\s*contents: read")
         self.assertNotRegex(workflow, r"contents:\s*write")
+
+    def test_portable_crypto_dependency_is_exactly_pinned_and_installed_from_manifest(self):
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").strip().splitlines()
+        self.assertEqual(requirements, [CRYPTOGRAPHY_PIN])
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertIn("-r requirements.txt", workflow)
+        self.assertNotRegex("\n".join(requirements), r">=|~=|\*|latest")
 
 
 if __name__ == "__main__":

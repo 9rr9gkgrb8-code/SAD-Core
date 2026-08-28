@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
-import os
-from pathlib import Path
 import threading
 import uuid
 
@@ -16,10 +13,12 @@ from personality import (
     get_contextual_follow_up,
     get_response,
 )
+from runtime_document import RuntimeJSONDocument
 
 
-CHAT_HISTORY_FILE = Path(__file__).with_name("chat_history.json")
-MAX_CHAT_FILE_BYTES = 12_000_000
+CHAT_FILENAME = "chat_history.json"
+CHAT_NAMESPACE = "chat_history"
+MAX_CHAT_FILE_BYTES = 8_000_000
 MAX_ACTIVE_SESSIONS_PER_ACCOUNT = 30
 MAX_MESSAGES_PER_SESSION = 500
 MAX_MESSAGE_CHARACTERS = 50_000
@@ -48,36 +47,42 @@ def _session_title(message):
     return compact[: MAX_TITLE_CHARACTERS - 1].rstrip() + "…"
 
 
+def _validate_chat_data(data):
+    if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("sessions"), dict):
+        raise ValueError("Unsupported or invalid chat history data.")
+    for session_id, session in data["sessions"].items():
+        if not isinstance(session_id, str) or not isinstance(session, dict):
+            raise ValueError("Invalid conversation record.")
+        if session.get("session_id") != session_id or not isinstance(session.get("account_id"), str):
+            raise ValueError("Conversation ownership metadata is invalid.")
+        messages = session.get("messages")
+        if not isinstance(messages, list) or len(messages) > MAX_MESSAGES_PER_SESSION:
+            raise ValueError("Conversation message list is invalid or oversized.")
+    return data
+
+
 class ConversationStore:
     """Persist private chat history while enforcing account ownership."""
 
-    def __init__(self, path=CHAT_HISTORY_FILE, now=None):
-        self.path = Path(path)
+    def __init__(self, path=None, now=None, database=None):
         self.now = now or _now
+        self.persistence = RuntimeJSONDocument(
+            CHAT_FILENAME,
+            CHAT_NAMESPACE,
+            {"schema_version": 1, "sessions": {}},
+            _validate_chat_data,
+            MAX_CHAT_FILE_BYTES,
+            path=path,
+            database=database,
+        )
+        self.path = self.persistence.path
         self.lock = threading.RLock()
 
     def _load(self):
-        if not self.path.exists():
-            return {"schema_version": 1, "sessions": {}}
-        if self.path.stat().st_size > MAX_CHAT_FILE_BYTES:
-            raise ValueError("Chat history file is unexpectedly large.")
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        if data.get("schema_version") != 1 or not isinstance(data.get("sessions"), dict):
-            raise ValueError("Unsupported or invalid chat history file.")
-        return data
+        return self.persistence.load()
 
     def _save(self, data):
-        serialized = json.dumps(data, indent=2)
-        if len(serialized.encode("utf-8")) > MAX_CHAT_FILE_BYTES:
-            raise ValueError("Chat history storage limit reached. Archive conversations before continuing.")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(serialized, encoding="utf-8")
-        try:
-            os.chmod(temporary, 0o600)
-        except OSError:
-            pass
-        os.replace(temporary, self.path)
+        self.persistence.save(data)
 
     @staticmethod
     def _public_session(session, include_messages=False):

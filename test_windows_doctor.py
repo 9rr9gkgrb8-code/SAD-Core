@@ -5,6 +5,7 @@ from pathlib import Path
 
 from windows_doctor import (
     check_dpapi,
+    check_portable_backup_crypto,
     check_private_data_writable,
     check_runtime_database,
     check_runtime_protection,
@@ -31,6 +32,11 @@ class WindowsDoctorTests(unittest.TestCase):
         check = check_runtime_database(self.root)
         self.assertEqual(check.status, "pass")
         self.assertTrue((self.root / "local_data" / "sad_runtime.sqlite3").is_file())
+
+    def test_portable_backup_crypto_dependency_is_ready(self):
+        check = check_portable_backup_crypto()
+        self.assertEqual(check.status, "pass")
+        self.assertIn("cryptography==50.0.1", check.detail)
 
     @unittest.skipUnless(platform.system() == "Windows", "Windows DPAPI test")
     def test_dpapi_preflight_passes_on_windows(self):

@@ -5,15 +5,15 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
-import json
-import os
-from pathlib import Path
 import secrets
 import threading
 import uuid
 
+from runtime_document import RuntimeJSONDocument
 
-MOBILE_STATE_FILE = Path(__file__).with_name("local_data") / "mobile_access.json"
+
+MOBILE_FILENAME = "mobile_access.json"
+MOBILE_NAMESPACE = "mobile_access"
 PAIRING_MINUTES = 5
 DEVICE_DAYS = 30
 PAIRING_HASH_ITERATIONS = 200_000
@@ -51,7 +51,6 @@ def _pairing_matches(item, code):
         except (ValueError, TypeError):
             return False
         return hmac.compare_digest(candidate, item.get("code_hash", ""))
-    # Transitional support for already-issued five-minute pairings from pre-Black builds.
     try:
         candidate = _secret_hash(code)
     except ValueError:
@@ -68,43 +67,41 @@ def _clean_label(value, field="label"):
     return cleaned
 
 
-class MobileAccessStore:
-    """Persist hashes of pairing codes and device tokens, never the raw secrets."""
+def _validate_mobile_data(data):
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise ValueError("Unsupported mobile access state.")
+    if not isinstance(data.get("pairings"), list) or not isinstance(data.get("devices"), list):
+        raise ValueError("Invalid mobile access state.")
+    if len(data["pairings"]) > 1_000 or len(data["devices"]) > 5_000:
+        raise ValueError("Mobile access state is unexpectedly large.")
+    return data
 
-    def __init__(self, state_file=MOBILE_STATE_FILE, now=None):
-        self.state_file = Path(state_file)
+
+class MobileAccessStore:
+    """Persist only hashes of pairing codes/device tokens inside encrypted runtime state."""
+
+    def __init__(self, state_file=None, now=None, database=None):
         self.now = now or _now
+        self.persistence = RuntimeJSONDocument(
+            MOBILE_FILENAME,
+            MOBILE_NAMESPACE,
+            {"schema_version": 1, "pairings": [], "devices": []},
+            _validate_mobile_data,
+            MAX_STATE_BYTES,
+            path=state_file,
+            database=database,
+        )
+        self.state_file = self.persistence.path
         self.lock = threading.RLock()
 
     def _empty(self):
         return {"schema_version": 1, "pairings": [], "devices": []}
 
     def _load(self):
-        if not self.state_file.exists():
-            return self._empty()
-        if self.state_file.is_symlink() or not self.state_file.is_file():
-            raise ValueError("Mobile access state must be a regular file.")
-        if self.state_file.stat().st_size > MAX_STATE_BYTES:
-            raise ValueError("Mobile access state is unexpectedly large.")
-        data = json.loads(self.state_file.read_text(encoding="utf-8"))
-        if data.get("schema_version") != 1:
-            raise ValueError("Unsupported mobile access state.")
-        if not isinstance(data.get("pairings"), list) or not isinstance(data.get("devices"), list):
-            raise ValueError("Invalid mobile access state.")
-        return data
+        return self.persistence.load()
 
     def _save(self, data):
-        encoded = json.dumps(data, indent=2)
-        if len(encoded.encode("utf-8")) > MAX_STATE_BYTES:
-            raise ValueError("Mobile access state exceeded its storage limit.")
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.state_file.with_suffix(self.state_file.suffix + ".tmp")
-        temporary.write_text(encoded, encoding="utf-8")
-        try:
-            os.chmod(temporary, 0o600)
-        except OSError:
-            pass
-        os.replace(temporary, self.state_file)
+        self.persistence.save(data)
 
     def _prune_pairings(self, data):
         now = self.now()
