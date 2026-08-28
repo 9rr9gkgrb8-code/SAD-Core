@@ -1,258 +1,201 @@
-# SAD + Forge Alpha 1
+# SAD Platform Alpha 1
+
+SAD Alpha 1 is a local-first AI platform candidate. The normal Core API remains
+loopback-only. Optional phone access uses a separate paired TLS gateway on an explicit
+private/approved-overlay address.
 
 ## Preflight
 
-Run `python alpha_doctor.py` before first launch or after changing local model or
-sandbox configuration. The doctor reports Alpha core readiness separately from
-automatic-code isolation readiness.
+Run:
 
-- `ALPHA CORE: READY` means the local browser product can start.
-- An unconfigured local model is optional for basic Alpha use. SAD Chat and Voice
-  visibly fall back to the built-in dialogue layer, while full AI conversation,
-  repair drafting, and Developer Workspace planning/coding require the configured
-  loopback-only model.
-- `REPAIR ISOLATION: BLOCKED` means automatic code verification remains disabled
-  until Docker and a preloaded digest-pinned `SAD_SANDBOX_IMAGE` are available. SAD
-  never silently falls back to same-user execution.
+```text
+python alpha_doctor.py
+```
 
-The optional paired mobile preview has its own `python mobile_doctor.py` preflight and
-is not ready until it reports `MOBILE GATEWAY: READY` on the actual host.
+Interpretation:
 
-Use `.env.example` as configuration reference. Never commit a real `.env` file.
+- `ALPHA CORE: READY` means the local browser/API product can start.
+- A Local AI model is optional for basic UI/built-in dialogue but required for full AI
+  conversation, Memory-aware Local AI responses, automatic repair drafting, and
+  Developer Workspace planning/coding.
+- Automatic repair/coding verification requires Docker plus a preloaded digest-pinned
+  `SAD_SANDBOX_IMAGE`. Missing required isolation fails closed.
+
+Mobile Preview additionally requires:
+
+```text
+python mobile_doctor.py
+MOBILE GATEWAY: READY
+```
+
+Never commit a real `.env` file.
 
 ## Start
 
-For desktop Alpha, run `python alpha.py`, complete one-time Owner setup, then open
-`http://127.0.0.1:8765/`. The core API remains loopback-only.
+Desktop/Core:
 
-For paired mobile preview, configure the private bind address and trusted TLS
-certificate/key described in `MOBILE.md`, then run `python mobile.py`.
+```text
+python alpha.py
+```
 
-Owner can create Student, Teacher, Developer, Reviewer, and Viewer accounts. Each
-person receives a separate credential.
+Open `http://127.0.0.1:8765/`.
 
-## Included surfaces
+Paired mobile mode after private-address/TLS setup:
 
-- **SAD Platform Core v0.2-alpha** with role-filtered module/capability discovery,
-  capability versions/lifecycle metadata, compatibility negotiation, scoped local-app
-  identity, metadata-only platform events, and Owner app/event controls.
-- **SAD Chat** with durable per-account conversations, recent-turn context, history,
-  archive/new-conversation controls, and visible `Local AI` versus `Built-in dialogue`
-  response status.
-- **Voice Client Bridge** through `POST /v1/voice/turn`, using a signed-in person's
-  normal account-owned SAD conversation and returning reply text suitable for future
-  local speech synthesis.
-- **SAD Developer Workspace** for task → scope plan → human-approved files → multi-file
-  isolated generation → Docker full-suite test → exact diff → Owner apply/rollback.
-- **Personal Study** with request-directed learning/writing/checking assistance and
-  optional local-model output.
-- **Forge Student** game-first quests, hints, mastery, XP/ranks, companion progression,
-  boss checks, and durable student progress.
-- Teacher student-progress roster.
-- Owner account administration and mobile-device trust controls.
-- Owner Repair Inbox with exact tested repair diff before YES/NO.
-- Shared role-filtered failure/development dashboard.
-- Optional Mobile Preview with installable PWA shell, one-time pairing, revocable
-  device trust, learning/full-role modes, SAD Chat, Voice transcript transport,
-  Study, Forge, and private TLS gateway while the core API stays on loopback.
-- Password change and session revocation.
-- Standard-library `sad_sdk.py` for reviewed loopback local integrations.
+```text
+python mobile.py
+```
 
-## Platform Core v0.2 boundary
+## Included platform surfaces
 
-SAD is the platform. Chat, Study, Forge, Voice, coding, repair, accounts, Mobile, and
-future local clients are governed surfaces of that platform rather than independent
-authority systems.
+### Platform Core `0.3-alpha`
 
-Human discovery:
+- manifest schema `3`
+- role-filtered module/capability discovery
+- capability version/lifecycle metadata
+- compatibility negotiation
+- Owner-scoped local app credential management
+- privacy-minimized platform event inspection
 
-- `GET /v1/platform`
-- `GET /v1/platform/modules`
-- `GET /v1/platform/capabilities`
-- `POST /v1/platform/compatibility`
+Platform metadata is descriptive only and cannot grant concrete endpoint authority.
 
-The registry filters human capabilities through the same `ROLE_PERMISSIONS` map used
-by live endpoints. Discovery metadata cannot create accounts, run code, approve
-repairs, apply files, bypass Docker, or exercise Git authority.
+### SAD Chat
 
-Every capability reports a numeric capability version plus lifecycle state. Clients
-may negotiate minimum versions; hidden capabilities remain unavailable rather than
-being leaked through compatibility responses.
+- private per-account conversations
+- durable history/new/archive
+- recent-turn context
+- Local AI vs Built-in dialogue labeling
+- optional enabled Personal Memory context
+- per-turn `use_memory: false` opt-out
 
-Platform modules remain declarative. Tier 2 does **not** dynamically load third-party
-Python/JavaScript, install packages, or create a plugin marketplace.
+### Voice Client Bridge
 
-See `PLATFORM.md`.
+- authenticated transcript input
+- same Chat ownership/history
+- same optional Memory rules
+- reply text plus `speech_text` for later local TTS
 
-## Local app boundary
+Direct microphone/STT/TTS is not bundled yet.
 
-Owner-only `platform:manage` can create scoped machine credentials for local software.
-These credentials are separate from human sessions.
+### Personal Memory
 
-Allowed machine scopes are intentionally narrow:
+- explicit user-created long-term Memory
+- categories: fact/preference/goal/project/note
+- create/list/search/edit/enable/disable/expiry/delete
+- per-account isolation
+- enabled/non-expired context only
+- local ignored `memory.json`
 
-- `platform:discover`
-- `platform:catalog`
-- `platform:modules`
-- `platform:compatibility`
-- `platform:events`
+Ordinary Chat is not silently promoted into long-term Memory.
 
-Creation and rotation return the app secret once. SAD persists only a salted hash in
-ignored `platform_clients.json`. Rotation invalidates the prior secret; revocation
-disables the app.
+### Governed Tool Actions
 
-A machine credential:
+Tier 3 fixed catalog:
 
-- cannot impersonate a SAD account;
-- cannot use Chat, Voice, Study, Forge, Developer Workspace, repair, accounts, or
-  mobile administration;
-- cannot run state-changing platform work;
-- cannot receive Git credentials or Git authority;
-- cannot use the mobile gateway machine endpoint family.
+- `platform.status`
+- `memory.search`
+- `memory.remember`
+- `memory.forget`
 
-Machine endpoints live only on the loopback core API under `/v1/platform/client/*`.
-The mobile gateway blocks that path family even for a Full Role paired phone.
+Read-only actions can run when ready. State-changing personal tools require explicit
+approve/reject before execution. There is no generic shell, arbitrary network, dynamic
+plugin/Python loader, package install, unrestricted filesystem action, or Git tool.
 
-See `PLATFORM_SDK.md`.
+### Personal Study
 
-## Platform event boundary
+Request-directed explanation, method teaching, direct answers when asked, work checking,
+proofreading, essay/rubric help, examples, and expansion with optional Local AI output.
 
-`platform_events.json` is a bounded private metadata stream for integrations and Owner
-inspection. Events include a monotonic sequence, UUID, type, time, optional subject ID,
-and a small details object.
+### Forge Learning
 
-Events deliberately exclude conversation text, prompts, generated code, diffs,
-passwords, user/app/device/session secrets, student work, and other high-value data.
+Game-first quests, hints, mastery/boss checks, XP/ranks, companion progression, and
+durable learner progress.
 
-A local app sees only exact event types approved on its registration. An empty event
-subscription means no events. Event-store failure is surfaced diagnostically but does
-not roll back an already completed primary action merely because auxiliary telemetry
-could not be written.
+### Developer Workspace
 
-## Voice Client Bridge boundary
+`task → scope suggestion → human-approved paths → private multi-file generation → Docker
+verification → exact diff/test evidence → Owner apply/rollback`
 
-`POST /v1/voice/turn` is conversation transport, not a tool-execution shortcut.
+Developer may prepare/test but cannot cross Owner live-application governance.
 
-- It requires a normal human Bearer session.
-- It accepts transcript text and an optional existing chat session ID.
-- Without a session ID, SAD creates a normal account-owned chat session.
-- It uses the same conversation engine/history isolation as SAD Chat.
-- It returns `reply` and identical `speech_text` for a future local TTS engine.
-- It reports `local_model` or `built_in` truthfully.
-- It does not approve repairs, run coding workspaces, manage apps/accounts, apply
-  files, or perform Git operations.
+### Controlled repair
 
-Learning-mode phones may use the Voice turn route after normal device pairing and user
-login. The current browser security policy still disables direct microphone capture,
-so this milestone is the stable transcript API, not bundled microphone/STT/TTS.
+`failure → human triage → scoped repair draft → isolated verification → exact tested
+diff → Owner YES/NO → verified local apply/rollback`
 
-## SAD Chat boundary
+Forge/AI cannot approve its own work or use Git authority.
 
-- Every chat belongs to one authenticated account.
-- Cross-account session-ID access is denied/not found.
-- `chat_history.json` is local, Git-ignored, atomically written, bounded, and excluded
-  from the PWA cache.
-- Only recent turns needed for context go to the local model.
-- If the model is unavailable, SAD labels the response `Built-in dialogue`.
-- Conversation wording cannot itself invoke repair, code, app-management, approval,
-  file, shell, or Git authority.
+### Accounts and roles
 
-## Developer Workspace authority boundary
+Local Owner, Developer, Reviewer, Viewer, Teacher, and Student identities use separate
+credentials and existing RBAC. Password/session/account protections remain enforced.
 
-Developer Workspace is the broad coding lane; failure-driven repair remains the narrow
-self-correction lane.
+### Local apps/events
 
-- Scope planning suggests paths but writes no code.
-- A human submits the explicit approved path list before the workspace exists.
-- The model sees source only for approved paths and edits only the private `.sad_dev`
-  worktree.
-- `.git`, `.github`, secrets, runtime data, hidden/control-plane paths, other SAD
-  workspaces/sandboxes, and unsupported/binary files are excluded.
-- At most 20 approved paths/edits are admitted per Alpha workspace.
-- The complete unittest suite runs through the digest-pinned, networkless, non-root
-  Docker boundary. Failed/unavailable isolation cannot be applied.
-- Developer may plan/create/execute/inspect; Reviewer/Viewer inspect only;
-  Student/Teacher have no Code Workspace access.
-- Only Owner may apply/rollback the exact tested workspace.
-- Live base hashes and post-test worktree hashes are rechecked before application.
-- Existing changed files are backed up. A failed multi-file apply restores/verifies
-  the original set.
-- Developer Workspace never invokes Git.
+Owner may create scoped loopback `SAD-App` credentials for Platform metadata clients.
+Secrets are one-time at creation/rotation and hashed at rest. Machine credentials do
+not impersonate humans. Event subscriptions are exact and metadata-only.
 
-See `DEVELOPER_WORKSPACE.md`.
+### Mobile Preview
 
-## Repair authority boundary
+- paired device + normal account login required
+- TLS 1.2+
+- explicit private/approved-overlay IPv4 binding
+- Learning mode: own Chat, Voice, Memory, governed Tools, Study, Forge, own progress
+- Full role: normal human route surface + normal RBAC
+- machine `/v1/platform/client/*` routes blocked in every mobile mode
+- static-shell-only PWA cache
 
-Forge may draft one tightly scoped repair in one approved root Python file and test it
-inside the configured Docker boundary. Owner reviews the actual diff before approval.
+## Private runtime data
 
-Owner approval applies only the exact passing proposal after stale-source validation,
-atomic replacement, resulting-hash verification, and proposal-local backup. Failure
-triggers verified rollback where possible.
+Git-ignored/private host data includes accounts, settings, failures/dashboard/progress,
+Chat history, `memory.json`, `tool_actions.json`, platform client/event state, mobile
+pairing state, `.sad_sandbox/`, `.sad_dev/`, local data, and `.env`.
 
-Reviewer approval remains evidence-only. Developer/Forge cannot approve/apply their
-own repair. Live repair never invokes Git commit, push, rebase, or merge.
+Do not put runtime data or private backups in the public repository.
 
-## Mobile authority boundary
+## Authority boundaries
 
-Pairing does not create a user session. A phone must pass paired-device trust and then
-normal SAD account authentication.
+SAD Alpha does not grant AI or Tool Actions generic host authority.
 
-`learning` mode permits explicit account-self, SAD Chat, Voice turn, Personal Study,
-Forge play, and own-progress routes. Developer Workspace, dashboard/admin, Platform
-app administration, and all machine-client routes are blocked.
-
-`full_role` mode admits normal human routes, then SAD RBAC decides authority. A
-Developer phone can prepare/test code but cannot apply; Owner remains required.
-Machine-client `/v1/platform/client/*` routes are still blocked.
-
-Device credentials remain revocable and browser-invisible through a
-Secure/HttpOnly/SameSite=Strict cookie. The PWA service worker excludes `/v1/*` and
-`/mobile/*` traffic, including app secrets, event responses, Chat/Voice, coding,
-student, account, repair, session, and pairing data.
-
-## Private data and backups
-
-Private runtime data includes:
-
-- `accounts.json`
-- `dashboard_state.json`
-- `student_progress.json`
-- `chat_history.json`
-- `failures.json`
-- `platform_clients.json`
-- `platform_events.json`
-- `.env`
-- `local_data/`
-- `.sad_sandbox/`
-- `.sad_dev/`
-
-These are Git-ignored. Stop SAD before taking an encrypted backup. Never put runtime
-backups in the public repository.
+- Dynamic third-party plugin execution: disabled.
+- Generic shell/network/filesystem/Git Tool Actions: absent.
+- Local app machine credentials: read-only/control-plane scoped.
+- Automatic coding: explicit file scope + Docker verification.
+- Live code apply/rollback: Owner governance.
+- Git commit/push/fetch/rebase/merge: outside AI and automatic application paths.
+- Public internet hosting: unsupported.
 
 ## Acceptance
 
-Before widening a local pilot, run `ALPHA_UAT.md`. It covers role boundaries,
-Platform discovery/versioning, local-app identity/scopes/rotation/revocation, event
-privacy/subscription filtering, Voice account isolation, Chat, Developer Workspace,
-repair, mobile, security, keyboard/screen-reader use, 200% zoom, and narrow-screen use.
+Automated gates:
 
-Automation is a regression net, not a substitute for the manual host/phone UAT.
+```text
+python -m compileall -q .
+python -m unittest -v
+python release_gate.py
+python alpha_doctor.py
+```
 
-## Isolation
+Automatic-code readiness also requires `python docker_proof.py` with the reviewed
+pinned image.
 
-Automatic repair and Developer Workspace verification require Docker plus a preloaded
-digest-pinned image in `SAD_SANDBOX_IMAGE`. Without it, execution stops fail-closed.
-AI components produce drafts/evidence only; human roles retain approval and Git
-authority.
+Human deployment acceptance requires the scenarios in:
 
-## Alpha boundary
+- `ALPHA_UAT.md`
+- `PLATFORM_TIER2_UAT.md`
+- `PLATFORM_TIER3_UAT.md`
+- `MOBILE.md` for any phone/device support claim
 
-The core Alpha remains local-first and refuses non-loopback core binding. Mobile is a
-separate paired TLS gateway restricted to one explicit private/approved overlay
-address and must not be router-port-forwarded to the public internet.
+Automated accessibility and security tests are regression nets, not substitutes for
+keyboard/screen-reader/zoom/narrow-screen and actual host/device validation.
 
-Platform Tier 2 adds scoped **loopback local-app credentials**, not public API keys.
-Public hosting, remote app credentials, hosted TLS termination, hosted secrets, email
-recovery, external identity, marketplace/plugin execution, and automatic package
-installation remain outside Alpha.
+## Alpha exit truth
+
+A code candidate is blocked by any failing test, release-integrity failure, authority
+leak, cross-account Memory/Tool access, mutating Tool execution without approval,
+private-data cache/source leakage, missing required coding isolation, stale/tampered
+tested code, or failed live/Git integrity evidence.
+
+A real deployment is not called operational until host-specific Local AI, Docker,
+mobile TLS/device setup where applicable, and the required UAT are proven on that host.
