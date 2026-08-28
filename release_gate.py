@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent
 REQUIRED_PATHS = (
     ".github/workflows/ci.yml",
     "ALPHA1.md",
+    "ALPHA_STABLE.md",
     "ALPHA_UAT.md",
     "BACKUP.md",
     "DEVELOPER_WORKSPACE.md",
@@ -29,6 +30,7 @@ REQUIRED_PATHS = (
     "requirements.txt",
     "alpha.py",
     "alpha_doctor.py",
+    "alpha_stable.py",
     "api.py",
     "auth.py",
     "backup.py",
@@ -68,6 +70,7 @@ REQUIRED_PATHS = (
     "windows_crypto.py",
     "windows_doctor.py",
     "test_alpha_doctor.py",
+    "test_alpha_stable.py",
     "test_alpha_product.py",
     "test_backup_recovery.py",
     "test_bounded_http.py",

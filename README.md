@@ -8,6 +8,11 @@ controlled repair, accounts/RBAC, paired Mobile access, scoped local app credent
 platform events, capability/version discovery, transactional protected persistence,
 Windows Encryption Tier 2, and verified native plus portable encrypted recovery.
 
+The frozen repository-backed SAD and Forge scope is **Alpha Stable**. The fail-closed
+`alpha_stable.py` gate reports both product surfaces separately and requires 100% of the
+declared contract in `ALPHA_STABLE.md`. Physical-device and human deployment acceptance
+remain separate and are never inferred from this code gate.
+
 ## Platform Core v0.3-alpha
 
 `platform_registry.py` defines the declarative platform catalog. Platform schema is `3`;
