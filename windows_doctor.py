@@ -9,8 +9,9 @@ import platform
 import tempfile
 
 from alpha_doctor import core_ready, run_checks
-from runtime_database import RuntimeDatabase
+from runtime_database import AT_REST_SCHEME, RuntimeDatabase
 from voice_runtime import VoiceRuntime
+from windows_crypto import protect_data, unprotect_data
 
 
 ROOT = Path(__file__).resolve().parent
@@ -40,13 +41,43 @@ def check_private_data_writable(root=ROOT):
         return WindowsCheck("private_data", "block", f"local_data is not writable: {error}")
 
 
+def check_dpapi():
+    if platform.system() != "Windows":
+        return WindowsCheck("dpapi", "block", "Windows DPAPI is unavailable on this host")
+    try:
+        probe = b"sad-windows-doctor-dpapi-probe"
+        protected = protect_data(probe, purpose="windows-doctor:v1")
+        if probe in protected or unprotect_data(protected, purpose="windows-doctor:v1") != probe:
+            return WindowsCheck("dpapi", "block", "DPAPI round-trip or confidentiality probe failed")
+    except (OSError, ValueError) as error:
+        return WindowsCheck("dpapi", "block", f"DPAPI protection failed: {error}")
+    return WindowsCheck("dpapi", "pass", "current-user DPAPI round-trip passed")
+
+
 def check_runtime_database(root=ROOT):
     try:
-        database = RuntimeDatabase(Path(root) / "local_data" / "sad_runtime.sqlite3")
+        path = Path(root) / "local_data" / "sad_runtime.sqlite3"
+        protect = platform.system() == "Windows" and Path(root).resolve() == ROOT.resolve()
+        database = RuntimeDatabase(path, protect_at_rest=protect)
         ready = database.quick_check()
     except (OSError, ValueError) as error:
         return WindowsCheck("runtime_database", "block", str(error))
     return WindowsCheck("runtime_database", "pass" if ready else "block", "SQLite quick_check passed" if ready else "SQLite quick_check failed")
+
+
+def check_runtime_protection(root=ROOT):
+    if platform.system() != "Windows":
+        return WindowsCheck("runtime_encryption", "block", "DPAPI runtime protection requires Windows")
+    try:
+        database = RuntimeDatabase(
+            Path(root) / "local_data" / "sad_runtime.sqlite3", protect_at_rest=True
+        )
+        status = database.at_rest_status()
+    except (OSError, ValueError) as error:
+        return WindowsCheck("runtime_encryption", "block", str(error))
+    if not status["protected"] or status["scheme"] != AT_REST_SCHEME or not status["active"]:
+        return WindowsCheck("runtime_encryption", "block", "runtime database is not using the required DPAPI scheme")
+    return WindowsCheck("runtime_encryption", "pass", f"runtime payloads use {AT_REST_SCHEME}")
 
 
 def check_voice_runtime(env=None, runtime_factory=VoiceRuntime):
@@ -71,7 +102,9 @@ def run_windows_checks(*, env=None, platform_name=None, root=ROOT):
     windows_checks = [
         check_windows(platform_name),
         check_private_data_writable(root),
+        check_dpapi(),
         check_runtime_database(root),
+        check_runtime_protection(root),
         check_voice_runtime(env),
     ]
     ready = core_ready(alpha_checks) and not any(check.status == "block" for check in windows_checks)

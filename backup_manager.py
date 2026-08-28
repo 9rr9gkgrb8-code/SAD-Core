@@ -1,28 +1,33 @@
-"""Verified backup and restore for SAD private runtime state.
+"""Verified and Windows-DPAPI-protected backup/restore for SAD private runtime state.
 
-Backups are explicit operator artifacts. They contain private local data and must be
-stored somewhere the operator trusts. Restore is offline-oriented and requires an
-explicit approval flag.
+On Windows, new backup artifacts are protected for the current Windows user before they
+are written to their final destination. Legacy plaintext ZIP handling is explicit rather
+than a silent downgrade.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import platform
 import tempfile
 import zipfile
 
 from runtime_database import RUNTIME_DB_FILE, RuntimeDatabase
 from runtime_privacy import LOCAL_DATA_DIRECTORY, PRIVATE_RUNTIME_FILES, ROOT
+from windows_crypto import protect_data, unprotect_data
 
 
 BACKUP_FORMAT_VERSION = 1
 MAX_BACKUP_FILES = 5_000
 MAX_BACKUP_BYTES = 512_000_000
 MANIFEST_NAME = "SAD_BACKUP_MANIFEST.json"
+BACKUP_DPAPI_MAGIC = b"SAD-DPAPI-BACKUP\x00\x01\n"
+BACKUP_DPAPI_PURPOSE = "backup-container:v1"
 
 
 def _now():
@@ -76,16 +81,8 @@ def _validate_source(path, root):
     return resolved.relative_to(root).as_posix()
 
 
-def create_backup(destination, *, root=ROOT):
-    """Create a hash-manifested ZIP, using SQLite's backup API for the runtime DB."""
+def _build_plain_backup_bytes(*, root=ROOT):
     root = Path(root).resolve()
-    destination = Path(destination).expanduser().resolve()
-    if destination.is_relative_to(root):
-        raise ValueError("Store backups outside the SAD project/runtime tree.")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() and destination.is_symlink():
-        raise ValueError("Backup destination must not be a symlink.")
-
     files = []
     total = 0
     with tempfile.TemporaryDirectory() as temporary_dir:
@@ -117,25 +114,48 @@ def create_backup(destination, *, root=ROOT):
             "total_bytes": total,
             "files": files,
         }
-        temporary_zip = destination.with_suffix(destination.suffix + ".tmp")
-        temporary_zip.unlink(missing_ok=True)
-        with zipfile.ZipFile(temporary_zip, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr(MANIFEST_NAME, json.dumps(manifest, indent=2))
             for relative, data in payloads:
                 archive.writestr(relative, data)
-        os.replace(temporary_zip, destination)
-    return verify_backup(destination)
+        raw = stream.getvalue()
+        if len(raw) > MAX_BACKUP_BYTES + 16_000_000:
+            raise ValueError("Backup container exceeds the configured size limit.")
+        return raw
 
 
-def verify_backup(path):
-    path = Path(path).expanduser().resolve()
-    if path.is_symlink() or not path.is_file():
-        raise ValueError("Backup must be an existing regular file.")
-    with zipfile.ZipFile(path, "r") as archive:
+def _decode_backup_container(raw, *, allow_plaintext=False):
+    if raw.startswith(BACKUP_DPAPI_MAGIC):
+        if platform.system() != "Windows":
+            raise OSError("DPAPI-protected SAD backups can be opened only in their Windows protection context.")
+        protected = raw[len(BACKUP_DPAPI_MAGIC):]
+        if not protected:
+            raise ValueError("Encrypted SAD backup payload is missing.")
+        try:
+            return unprotect_data(protected, purpose=BACKUP_DPAPI_PURPOSE), "windows-dpapi-user-v1"
+        except OSError as error:
+            raise ValueError("SAD backup could not be decrypted in this Windows protection context.") from error
+    if not allow_plaintext:
+        raise ValueError("Plaintext/legacy SAD backup is blocked unless explicitly allowed for migration or compatibility.")
+    return raw, "plaintext-legacy"
+
+
+def _verify_plain_backup_bytes(raw):
+    if len(raw) > MAX_BACKUP_BYTES + 16_000_000:
+        raise ValueError("Backup container exceeds the configured size limit.")
+    try:
+        archive_context = zipfile.ZipFile(io.BytesIO(raw), "r")
+    except zipfile.BadZipFile as error:
+        raise ValueError("SAD backup payload is not a valid ZIP container.") from error
+    with archive_context as archive:
         names = archive.namelist()
         if names.count(MANIFEST_NAME) != 1 or len(names) != len(set(names)):
             raise ValueError("Backup manifest is missing or archive paths are duplicated.")
-        manifest = json.loads(archive.read(MANIFEST_NAME).decode("utf-8"))
+        try:
+            manifest = json.loads(archive.read(MANIFEST_NAME).decode("utf-8"))
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("Backup manifest is invalid.") from error
         if manifest.get("format") != "sad-runtime-backup" or manifest.get("format_version") != BACKUP_FORMAT_VERSION:
             raise ValueError("Unsupported SAD backup format.")
         entries = manifest.get("files")
@@ -147,8 +167,13 @@ def verify_backup(path):
             if not isinstance(entry, dict):
                 raise ValueError("Invalid SAD backup entry.")
             relative = _safe_relative(entry.get("path", ""))
+            if relative in expected_names:
+                raise ValueError("Backup manifest contains duplicate file declarations.")
             expected_names.add(relative)
-            data = archive.read(relative)
+            try:
+                data = archive.read(relative)
+            except KeyError as error:
+                raise ValueError(f"Backup manifest references missing file: {relative}.") from error
             total += len(data)
             if total > MAX_BACKUP_BYTES:
                 raise ValueError("Backup exceeds the configured size limit.")
@@ -167,13 +192,89 @@ def verify_backup(path):
     return manifest
 
 
-def restore_backup(path, *, root=ROOT, explicitly_approved=False):
+def create_backup(destination, *, root=ROOT, allow_plaintext=False):
+    """Create a verified backup. Windows defaults to current-user DPAPI protection."""
+    root = Path(root).resolve()
+    destination = Path(destination).expanduser().resolve()
+    if destination.is_relative_to(root):
+        raise ValueError("Store backups outside the SAD project/runtime tree.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and destination.is_symlink():
+        raise ValueError("Backup destination must not be a symlink.")
+
+    plain = _build_plain_backup_bytes(root=root)
+    if platform.system() == "Windows" and not allow_plaintext:
+        protected = protect_data(plain, purpose=BACKUP_DPAPI_PURPOSE)
+        output = BACKUP_DPAPI_MAGIC + protected
+    elif allow_plaintext:
+        output = plain
+    else:
+        raise OSError("Encrypted SAD backup creation currently requires Windows DPAPI; plaintext creation must be explicit.")
+
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.unlink(missing_ok=True)
+    temporary.write_bytes(output)
+    try:
+        os.chmod(temporary, 0o600)
+    except OSError:
+        pass
+    os.replace(temporary, destination)
+    return verify_backup(destination, allow_plaintext=allow_plaintext)
+
+
+def verify_backup(path, *, allow_plaintext=False):
+    path = Path(path).expanduser().resolve()
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Backup must be an existing regular file.")
+    raw = path.read_bytes()
+    plain, protection = _decode_backup_container(raw, allow_plaintext=allow_plaintext)
+    manifest = _verify_plain_backup_bytes(plain)
+    result = dict(manifest)
+    result["container_protection"] = protection
+    return result
+
+
+def encrypt_legacy_backup(source, destination):
+    """Convert a verified legacy plaintext backup into a Windows DPAPI container."""
+    if platform.system() != "Windows":
+        raise OSError("Legacy backup encryption requires Windows DPAPI.")
+    source = Path(source).expanduser().resolve()
+    destination = Path(destination).expanduser().resolve()
+    if source == destination:
+        raise ValueError("Write the encrypted backup to a different destination first.")
+    if source.is_symlink() or not source.is_file():
+        raise ValueError("Legacy backup must be an existing regular file.")
+    raw = source.read_bytes()
+    if raw.startswith(BACKUP_DPAPI_MAGIC):
+        raise ValueError("Backup is already DPAPI-protected.")
+    _verify_plain_backup_bytes(raw)
+    protected = BACKUP_DPAPI_MAGIC + protect_data(raw, purpose=BACKUP_DPAPI_PURPOSE)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and destination.is_symlink():
+        raise ValueError("Encrypted backup destination must not be a symlink.")
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.unlink(missing_ok=True)
+    temporary.write_bytes(protected)
+    try:
+        os.chmod(temporary, 0o600)
+    except OSError:
+        pass
+    os.replace(temporary, destination)
+    return verify_backup(destination)
+
+
+def restore_backup(path, *, root=ROOT, explicitly_approved=False, allow_plaintext=False):
     """Restore verified private state. SAD should be stopped while this runs."""
     if not explicitly_approved:
         raise PermissionError("Explicit approval is required before restoring SAD private state.")
     root = Path(root).resolve()
-    manifest = verify_backup(path)
-    with zipfile.ZipFile(Path(path).expanduser().resolve(), "r") as archive, tempfile.TemporaryDirectory() as stage_dir:
+    backup_path = Path(path).expanduser().resolve()
+    if backup_path.is_symlink() or not backup_path.is_file():
+        raise ValueError("Backup must be an existing regular file.")
+    plain, protection = _decode_backup_container(backup_path.read_bytes(), allow_plaintext=allow_plaintext)
+    manifest = _verify_plain_backup_bytes(plain)
+
+    with zipfile.ZipFile(io.BytesIO(plain), "r") as archive, tempfile.TemporaryDirectory() as stage_dir:
         stage_dir = Path(stage_dir)
         staged = []
         for entry in manifest["files"]:
@@ -217,4 +318,9 @@ def restore_backup(path, *, root=ROOT, explicitly_approved=False):
                     temporary.write_bytes(prior)
                     os.replace(temporary, target)
             raise
-    return {"restored": True, "file_count": manifest["file_count"], "created_at": manifest["created_at"]}
+    return {
+        "restored": True,
+        "file_count": manifest["file_count"],
+        "created_at": manifest["created_at"],
+        "container_protection": protection,
+    }

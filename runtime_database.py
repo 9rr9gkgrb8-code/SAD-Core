@@ -1,22 +1,25 @@
 """Transactional SQLite foundation for SAD private runtime state.
 
-The database is local-only application state. It is not a source file, capability grant,
-or authority boundary. Stores may migrate validated legacy JSON documents into named
-SQLite documents while preserving a protected import archive for recovery.
+The default Windows runtime protects Tier 2/3 document payloads with current-user DPAPI.
+The SQLite structure and non-sensitive schema metadata remain readable so integrity and
+migration checks can operate without inventing a custom encrypted database format.
 """
 
 from __future__ import annotations
 
+import base64
 from contextlib import closing
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import platform
 import sqlite3
 import threading
 
 from runtime_privacy import LOCAL_DATA_DIRECTORY
+from windows_crypto import protect_data, unprotect_data
 
 
 RUNTIME_DB_FILE = LOCAL_DATA_DIRECTORY / "sad_runtime.sqlite3"
@@ -24,6 +27,9 @@ LEGACY_IMPORT_DIRECTORY = LOCAL_DATA_DIRECTORY / "legacy_imported"
 DATABASE_SCHEMA_VERSION = 1
 MAX_DATABASE_BYTES = 128_000_000
 MAX_DOCUMENT_BYTES = 8_000_000
+AT_REST_META_KEY = "at_rest_scheme"
+AT_REST_SCHEME = "windows-dpapi-user-v1"
+PROTECTED_ENVELOPE_VERSION = 1
 
 
 def _now():
@@ -45,11 +51,57 @@ def _validate_namespace(namespace):
     return namespace
 
 
+def _purpose(namespace):
+    return f"runtime-document:v1:{namespace}"
+
+
+def _is_protected_envelope(value):
+    return (
+        isinstance(value, dict)
+        and value.get("__sad_protected__") == PROTECTED_ENVELOPE_VERSION
+        and value.get("scheme") == AT_REST_SCHEME
+        and isinstance(value.get("blob"), str)
+    )
+
+
+def _protect_payload(namespace, payload):
+    protected = protect_data(payload.encode("utf-8"), purpose=_purpose(namespace))
+    return _canonical({
+        "__sad_protected__": PROTECTED_ENVELOPE_VERSION,
+        "scheme": AT_REST_SCHEME,
+        "blob": base64.b64encode(protected).decode("ascii"),
+    })
+
+
+def _unprotect_payload(namespace, payload):
+    try:
+        envelope = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Protected runtime document envelope is corrupt: {namespace}.") from error
+    if not _is_protected_envelope(envelope):
+        raise ValueError(f"Protected runtime document is plaintext or has an unsupported envelope: {namespace}.")
+    try:
+        protected = base64.b64decode(envelope["blob"], validate=True)
+        plaintext = unprotect_data(protected, purpose=_purpose(namespace))
+        return plaintext.decode("utf-8")
+    except (ValueError, UnicodeDecodeError, OSError) as error:
+        raise ValueError(f"Protected runtime document could not be decrypted: {namespace}.") from error
+
+
 class RuntimeDatabase:
     """Small local SQLite document database with explicit schema and integrity checks."""
 
-    def __init__(self, path=RUNTIME_DB_FILE):
+    def __init__(self, path=RUNTIME_DB_FILE, *, protect_at_rest=None):
         self.path = Path(path)
+        if protect_at_rest is None:
+            try:
+                is_live_default = self.path.resolve() == Path(RUNTIME_DB_FILE).resolve()
+            except OSError:
+                is_live_default = self.path == Path(RUNTIME_DB_FILE)
+            protect_at_rest = platform.system() == "Windows" and is_live_default
+        if protect_at_rest and platform.system() != "Windows":
+            raise OSError("DPAPI-protected runtime persistence requires Windows.")
+        self.protect_at_rest = bool(protect_at_rest)
         self.lock = threading.RLock()
         self._initialize()
 
@@ -70,7 +122,59 @@ class RuntimeDatabase:
         connection.execute("PRAGMA busy_timeout = 5000")
         return connection
 
+    def _ensure_at_rest_state(self, connection):
+        row = connection.execute(
+            "SELECT value FROM runtime_meta WHERE key=?", (AT_REST_META_KEY,)
+        ).fetchone()
+        scheme = None if row is None else row["value"]
+
+        if scheme is not None and scheme != AT_REST_SCHEME:
+            raise ValueError("Unsupported SAD runtime at-rest protection scheme.")
+        if scheme == AT_REST_SCHEME and not self.protect_at_rest:
+            raise ValueError("This runtime database is DPAPI-protected and requires protected Windows runtime access.")
+
+        rows = connection.execute(
+            "SELECT namespace, payload_json FROM runtime_documents ORDER BY namespace"
+        ).fetchall()
+
+        if scheme == AT_REST_SCHEME:
+            for document in rows:
+                try:
+                    value = json.loads(document["payload_json"])
+                except json.JSONDecodeError as error:
+                    raise ValueError("Protected runtime document envelope is corrupt.") from error
+                if not _is_protected_envelope(value):
+                    raise ValueError(
+                        f"Protected runtime database contains downgraded/plaintext state: {document['namespace']}."
+                    )
+            return False
+
+        if not self.protect_at_rest:
+            return False
+
+        # First protected Windows startup. Convert all existing plaintext documents in one
+        # transaction before declaring the database protected.
+        for document in rows:
+            namespace = _validate_namespace(document["namespace"])
+            try:
+                value = json.loads(document["payload_json"])
+            except json.JSONDecodeError as error:
+                raise ValueError(f"Cannot migrate corrupt runtime document: {namespace}.") from error
+            if _is_protected_envelope(value):
+                raise ValueError("Protected payload exists without at-rest metadata; refusing ambiguous migration.")
+            plaintext = _canonical(value)
+            connection.execute(
+                "UPDATE runtime_documents SET payload_json=?, updated_at=? WHERE namespace=?",
+                (_protect_payload(namespace, plaintext), _now(), namespace),
+            )
+        connection.execute(
+            "INSERT INTO runtime_meta(key, value) VALUES(?, ?)",
+            (AT_REST_META_KEY, AT_REST_SCHEME),
+        )
+        return bool(rows)
+
     def _initialize(self):
+        migrated = False
         with self.lock, closing(self._connect()) as connection:
             try:
                 connection.execute(
@@ -94,10 +198,16 @@ class RuntimeDatabase:
                     )
                 elif int(row["value"]) != DATABASE_SCHEMA_VERSION:
                     raise ValueError("Unsupported SAD runtime database schema.")
+                migrated = self._ensure_at_rest_state(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
                 raise
+        if migrated:
+            # VACUUM rewrites free pages after plaintext-to-DPAPI conversion. This reduces
+            # ordinary plaintext remnants but is not a forensic secure erase guarantee.
+            with self.lock, closing(self._connect()) as connection:
+                connection.execute("VACUUM")
         self._restrict_permissions()
 
     def _restrict_permissions(self):
@@ -125,8 +235,18 @@ class RuntimeDatabase:
             return deepcopy(default)
         if int(row["document_schema"]) != int(document_schema):
             raise ValueError(f"Unsupported runtime document schema for {namespace}.")
+        payload = row["payload_json"]
+        if self.protect_at_rest:
+            payload = _unprotect_payload(namespace, payload)
+        else:
+            try:
+                possible = json.loads(payload)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"Corrupt runtime document: {namespace}.") from error
+            if _is_protected_envelope(possible):
+                raise ValueError("Protected runtime payload encountered through plaintext database mode.")
         try:
-            value = json.loads(row["payload_json"])
+            value = json.loads(payload)
         except json.JSONDecodeError as error:
             raise ValueError(f"Corrupt runtime document: {namespace}.") from error
         return value
@@ -135,11 +255,18 @@ class RuntimeDatabase:
         namespace = _validate_namespace(namespace)
         if not isinstance(max_bytes, int) or not 1 <= max_bytes <= MAX_DOCUMENT_BYTES:
             raise ValueError("Invalid runtime document size limit.")
-        payload = _canonical(value)
-        if len(payload.encode("utf-8")) > max_bytes:
+        plaintext = _canonical(value)
+        if len(plaintext.encode("utf-8")) > max_bytes:
             raise ValueError(f"Runtime document {namespace} exceeded its storage limit.")
+        payload = _protect_payload(namespace, plaintext) if self.protect_at_rest else plaintext
         with self.lock, closing(self._connect()) as connection:
             try:
+                if self.protect_at_rest:
+                    scheme = connection.execute(
+                        "SELECT value FROM runtime_meta WHERE key=?", (AT_REST_META_KEY,)
+                    ).fetchone()
+                    if scheme is None or scheme["value"] != AT_REST_SCHEME:
+                        raise ValueError("Runtime at-rest protection metadata is missing or invalid.")
                 connection.execute("BEGIN IMMEDIATE")
                 connection.execute(
                     """INSERT INTO runtime_documents(namespace, document_schema, payload_json, updated_at)
@@ -196,6 +323,17 @@ class RuntimeDatabase:
             rows = connection.execute("PRAGMA quick_check").fetchall()
         return bool(rows) and all(row[0] == "ok" for row in rows)
 
+    def at_rest_status(self):
+        with self.lock, closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT value FROM runtime_meta WHERE key=?", (AT_REST_META_KEY,)
+            ).fetchone()
+        return {
+            "protected": row is not None and row["value"] == AT_REST_SCHEME,
+            "scheme": None if row is None else row["value"],
+            "active": self.protect_at_rest,
+        }
+
     def document_names(self):
         with self.lock, closing(self._connect()) as connection:
             rows = connection.execute(
@@ -219,7 +357,6 @@ class RuntimeDatabase:
                     if not rows or not all(row[0] == "ok" for row in rows):
                         raise OSError("SQLite snapshot integrity verification failed.")
                     target.commit()
-            # Both SQLite handles are closed before Windows is asked to replace the file.
             os.replace(temporary, destination)
         except Exception:
             temporary.unlink(missing_ok=True)

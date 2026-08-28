@@ -5,8 +5,8 @@ SAD is a local-first AI platform with human-controlled authority boundaries.
 Current Alpha surfaces include SAD Chat, Voice, explicit Personal Memory, governed Tool
 Actions, Personal Study, Forge Learning, multi-file Developer Workspace coding,
 controlled repair, accounts/RBAC, paired Mobile access, scoped local app credentials,
-platform events, capability/version discovery, transactional Tier 2/3 persistence, and
-verified operator backup/recovery.
+platform events, capability/version discovery, transactional Tier 2/3 persistence,
+Windows Encryption Tier 1, and verified encrypted operator backup/recovery.
 
 ## Platform Core v0.3-alpha
 
@@ -18,10 +18,10 @@ Owner approval where required.
 Built-in modules include SAD Platform Core, Chat, Voice, Personal Memory, governed Tools,
 Personal Study, Forge, Developer Workspace, Accounts/Roles, and Mobile.
 
-## Runtime data and SQLite
+## Runtime data, SQLite, and Windows at-rest protection
 
-Private application data belongs outside source/control surfaces. Tier 2/3 state now uses
-the versioned transactional database:
+Private application data belongs outside source/control surfaces. Tier 2/3 state uses the
+versioned transactional database:
 
 ```text
 local_data/sad_runtime.sqlite3
@@ -34,35 +34,50 @@ The SQLite database currently holds default runtime documents for:
 - Platform local-app registrations;
 - privacy-minimized Platform events.
 
+On the intended Windows deployment path, these document payloads are protected with the
+current Windows user's DPAPI context before they are persisted. Existing plaintext rows
+are transactionally migrated on first protected startup. Once protection is declared,
+plaintext/downgraded rows fail closed.
+
 Validated legacy JSON copies for those stores are imported only when SQLite has no
 corresponding namespace, verified after import, then moved into
 `local_data/legacy_imported/`. If both live SQLite and legacy JSON appear authoritative,
 startup fails closed instead of guessing.
 
 Accounts, Chat history, progress, failures/dashboard state, settings, and mobile pairing
-state remain compatible private stores during this stabilization milestone. They are
-covered by backup/recovery and can later migrate through the same versioned database
-machinery.
+state remain compatible private stores during this milestone. Until they migrate into the
+protected data layer, use BitLocker/full-disk or deliberate host file encryption for their
+at-rest confidentiality.
 
 ## Backup and recovery
 
-Create a verified backup outside the SAD tree:
+Create an encrypted Windows backup outside the SAD tree:
 
 ```powershell
-python backup.py create D:\SAD-Backups\sad-state.zip
-python backup.py verify D:\SAD-Backups\sad-state.zip
+python backup.py create D:\SAD-Backups\sad-state.sadbak
+python backup.py verify D:\SAD-Backups\sad-state.sadbak
 ```
 
 Restore only while SAD is stopped and only with explicit approval:
 
 ```powershell
-python backup.py restore D:\SAD-Backups\sad-state.zip --confirm
+python backup.py restore D:\SAD-Backups\sad-state.sadbak --confirm
 ```
 
-Backups contain a hash manifest, use SQLite's online backup API for a consistent database
+The verified ZIP/manifest exists inside a current-user DPAPI-protected container. Backups
+retain per-file SHA-256, use SQLite's online backup API for a consistent database
 snapshot, reject traversal/undeclared/tampered files, verify SQLite integrity, stage
 restore files before replacement, and roll back already-replaced files if restore fails.
-See `BACKUP.md`.
+
+Legacy plaintext backup ZIPs are rejected by the normal verify/restore path. Convert a
+verified old backup explicitly:
+
+```powershell
+python backup.py encrypt-legacy D:\OldBackups\sad-state.zip D:\SAD-Backups\sad-state.sadbak
+```
+
+Tier 1 DPAPI backups are tied to their Windows protection context and are not yet a
+portable cross-machine disaster-recovery format. See `BACKUP.md` and `ENCRYPTION.md`.
 
 ## Conversation and Voice
 
@@ -134,11 +149,15 @@ private traffic never does. See `MOBILE.md`.
 
 ## Windows readiness
 
-CI now runs the full suite, Protocol Black, release gate, and Alpha preflight on:
+CI runs the full suite, Protocol Black, release gate, and Alpha preflight on:
 
 - Ubuntu 24.04 / Python 3.11;
 - Windows Server 2025 runner / Python 3.11;
 - Windows Server 2025 runner / Python 3.12.
+
+Windows CI additionally exercises real DPAPI protection/decryption, tamper/purpose
+rejection, runtime payload confidentiality/migration/downgrade behavior, and encrypted
+backup/restore.
 
 On the actual Windows deployment host run:
 
@@ -147,15 +166,17 @@ python windows_doctor.py
 .\start_sad_windows.ps1
 ```
 
-CI Windows coverage does not substitute for Windows 11/Docker/model/TLS/phone/audio human
-UAT on the real machine. See `WINDOWS.md`.
+The Windows doctor requires a successful DPAPI probe and active runtime payload
+protection. CI Windows coverage does not substitute for Windows 11/BitLocker/Docker/model/
+TLS/phone/audio human UAT on the real machine. See `WINDOWS.md`.
 
 ## Private runtime data
 
 Treat `local_data/`, legacy private JSON names, `.sad_sandbox/`, `.sad_dev/`, `.env`,
 accounts/chat/progress/settings/failure state, app/device credentials, Memory, Tool
-Actions, Platform events, and the SQLite runtime database as private host data. They are
-Git-ignored and excluded from coding/release-source surfaces.
+Actions, Platform events, the SQLite runtime database, and backup artifacts as private
+host data. They remain Git-ignored and excluded from coding/release-source surfaces even
+when a subset is application-encrypted.
 
 ## Run and verify
 
@@ -185,6 +206,6 @@ Automatic repair/coding readiness additionally requires the reviewed digest-pinn
 Docker sandbox image and `python docker_proof.py`. Mobile readiness requires
 `mobile_doctor.py` and real host/phone UAT.
 
-See `PLATFORM.md`, `API.md`, `SECURITY.md`, `ALPHA1.md`, `BACKUP.md`, `VOICE.md`,
-`WINDOWS.md`, `PLATFORM_TIER2_UAT.md`, and `PLATFORM_TIER3_UAT.md` for the current
-contracts.
+See `PLATFORM.md`, `API.md`, `SECURITY.md`, `ALPHA1.md`, `BACKUP.md`, `ENCRYPTION.md`,
+`VOICE.md`, `WINDOWS.md`, `PLATFORM_TIER2_UAT.md`, and `PLATFORM_TIER3_UAT.md` for the
+current contracts.

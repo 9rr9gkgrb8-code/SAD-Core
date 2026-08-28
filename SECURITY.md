@@ -15,10 +15,38 @@ SAD distinguishes:
 
 No principal may be silently converted into another.
 
+## At-rest encryption
+
+Encryption Tier 1 uses Windows Data Protection API (DPAPI) through the operating system.
+SAD does not implement its own cipher and does not store an application master key in the
+repository/runtime tree.
+
+On the intended Windows deployment path:
+
+- Tier 2/3 SQLite document payloads use current-user DPAPI protection;
+- the DPAPI entropy/purpose is bound to the exact SAD data purpose/namespace;
+- existing plaintext runtime documents are converted transactionally before the database
+  declares the protection scheme active;
+- after protection is declared, a plaintext/downgraded document row blocks startup;
+- encrypted `.sadbak` backup containers protect the complete verified inner backup;
+- plaintext legacy backup ZIPs are rejected by normal verify/restore and require an
+  explicit migration/compatibility path;
+- passwords remain one-way PBKDF2 hashes rather than reversible encrypted values;
+- app/device secrets remain one-way hashed where the original value need not be recovered.
+
+DPAPI is user-context protection, not a substitute for full-disk encryption. BitLocker or
+equivalent full-disk encryption remains the outer protection against offline disk theft.
+DPAPI also does not defend against malware or an attacker already controlling the logged-
+in Windows account.
+
+SAD does not silently enable Windows EFS because loss of EFS recovery material can make
+data permanently inaccessible. EFS is an optional host hardening decision only after its
+certificate/recovery process is established.
+
 ## Runtime persistence
 
-Tier 2/3 default state now uses `local_data/sad_runtime.sqlite3`, a versioned SQLite
-runtime database. Current namespaces cover Personal Memory, Tool Actions, Platform client
+Tier 2/3 default state uses `local_data/sad_runtime.sqlite3`, a versioned SQLite runtime
+database. Current namespaces cover Personal Memory, Tool Actions, Platform client
 registrations, and Platform events.
 
 Security rules:
@@ -29,12 +57,15 @@ Security rules:
 - database/document sizes are bounded;
 - database schema/document schema versions are checked;
 - `PRAGMA quick_check` is exposed for preflight/backup verification;
+- Windows live document payloads are DPAPI-protected before persistence;
+- protected envelopes and at-rest metadata are versioned and downgrade-checked;
 - validated legacy JSON is imported only if the SQLite namespace does not already exist;
 - import is verified before the legacy JSON is moved to a protected archive;
 - simultaneous live SQLite + legacy JSON state fails closed instead of being merged implicitly.
 
 Accounts, Chat/progress/settings/failure/mobile state remain compatible private stores in
-this stabilization milestone and remain inside the backup/security boundary.
+this milestone. Until migrated into the protected data layer, their confidentiality at
+rest depends on host/full-disk/file encryption.
 
 ## Backup and restore
 
@@ -43,16 +74,17 @@ Backups contain sensitive local data. `backup_manager.py` therefore:
 - requires the destination to be outside the SAD project/runtime tree;
 - rejects symlink and path-escape sources;
 - uses SQLite's backup API for a consistent runtime-database snapshot;
-- emits a manifest with every path, size, and SHA-256;
+- emits an inner manifest with every path, size, and SHA-256;
 - rejects duplicate, undeclared, traversal, size-mismatched, or hash-mismatched archive data;
 - verifies SQLite integrity inside the archive;
+- on Windows, DPAPI-protects the complete verified backup container before final write;
+- rejects normal plaintext backup verify/restore unless compatibility is explicitly requested;
 - requires explicit approval before restore;
 - stages and verifies files before replacement;
 - restores already-replaced original bytes if a later replacement fails.
 
-SAD should be stopped during restore. Backups are not encrypted by SAD in this milestone;
-the operator must store them on trusted encrypted media/location when confidentiality at
-rest is required.
+SAD should be stopped during restore. Tier 1 DPAPI backups are intentionally bound to the
+Windows protection context and are not yet a portable cross-machine archival format.
 
 ## Personal Memory
 
@@ -140,26 +172,27 @@ Git credential authority.
 
 ## Windows deployment boundary
 
-The full suite, Protocol Black, release gate, and Alpha preflight now run in CI on Ubuntu
-Python 3.11 plus Windows Python 3.11 and 3.12. `windows_doctor.py` additionally checks the
-Windows OS gate, private-data writability, and SQLite runtime integrity.
+The full suite, Protocol Black, release gate, and Alpha preflight run in CI on Ubuntu
+Python 3.11 plus Windows Python 3.11 and 3.12. `windows_doctor.py` additionally requires
+the Windows OS gate, private-data writability, a real current-user DPAPI round-trip,
+SQLite runtime integrity, and active runtime payload protection.
 
 CI Windows runners do not prove the actual Windows 11 deployment machine. Real host
-patch state, Windows account permissions, firewall, full-disk encryption, Docker Desktop
-permissions, model/runtime provenance, TLS key permissions, LAN/router configuration,
-phone trust, microphone/speaker behavior, and physical compromise remain deployment UAT
-or host-security responsibilities.
+patch state, Windows account permissions, firewall, BitLocker/full-disk encryption,
+Docker Desktop permissions, model/runtime provenance, TLS key permissions, LAN/router
+configuration, backup recovery context, phone trust, microphone/speaker behavior, and
+physical compromise remain deployment UAT or host-security responsibilities.
 
 ## Private runtime data
 
 Treat `local_data/` (including `sad_runtime.sqlite3` and legacy import archives), account/
 conversation/progress/settings/failure/mobile state, app/device credentials, Memory,
-Tool Actions, `.sad_sandbox/`, `.sad_dev/`, `.env`, and backup archives as private. Never
-commit them.
+Tool Actions, `.sad_sandbox/`, `.sad_dev/`, `.env`, and backup artifacts as private. Never
+commit them, even when a subset is application-encrypted.
 
 ## Acceptance
 
 Automated tests are a regression net, not a substitute for deployment validation. Run
-`ALPHA_UAT.md`, `PLATFORM_TIER2_UAT.md`, `PLATFORM_TIER3_UAT.md`, `WINDOWS.md`, and the
-mobile/Voice/backup procedures on the actual devices for which operational support will
-be claimed.
+`ALPHA_UAT.md`, `PLATFORM_TIER2_UAT.md`, `PLATFORM_TIER3_UAT.md`, `ENCRYPTION.md`,
+`WINDOWS.md`, and the mobile/Voice/backup procedures on the actual devices for which
+operational support will be claimed.

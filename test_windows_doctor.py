@@ -1,8 +1,15 @@
+import platform
 import tempfile
 import unittest
 from pathlib import Path
 
-from windows_doctor import check_private_data_writable, check_runtime_database, check_windows
+from windows_doctor import (
+    check_dpapi,
+    check_private_data_writable,
+    check_runtime_database,
+    check_runtime_protection,
+    check_windows,
+)
 
 
 class WindowsDoctorTests(unittest.TestCase):
@@ -24,6 +31,22 @@ class WindowsDoctorTests(unittest.TestCase):
         check = check_runtime_database(self.root)
         self.assertEqual(check.status, "pass")
         self.assertTrue((self.root / "local_data" / "sad_runtime.sqlite3").is_file())
+
+    @unittest.skipUnless(platform.system() == "Windows", "Windows DPAPI test")
+    def test_dpapi_preflight_passes_on_windows(self):
+        self.assertEqual(check_dpapi().status, "pass")
+
+    @unittest.skipUnless(platform.system() == "Windows", "Windows DPAPI test")
+    def test_runtime_protection_preflight_enables_dpapi(self):
+        check = check_runtime_protection(self.root)
+        self.assertEqual(check.status, "pass")
+        protected = Path(self.root) / "local_data" / "sad_runtime.sqlite3"
+        self.assertTrue(protected.is_file())
+
+    @unittest.skipIf(platform.system() == "Windows", "non-Windows behavior")
+    def test_dpapi_checks_fail_closed_off_windows(self):
+        self.assertEqual(check_dpapi().status, "block")
+        self.assertEqual(check_runtime_protection(self.root).status, "block")
 
 
 if __name__ == "__main__":
