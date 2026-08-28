@@ -107,7 +107,7 @@ class PlatformEventStore:
             raise ValueError("after_seq must be a non-negative integer.")
         if not isinstance(limit, int) or not 1 <= limit <= 250:
             raise ValueError("limit must be between 1 and 250.")
-        selected = set(event_types or EVENT_TYPES)
+        selected = set(EVENT_TYPES if event_types is None else event_types)
         if not selected.issubset(EVENT_TYPES):
             raise ValueError("Unsupported event subscription.")
         data = self._load()
