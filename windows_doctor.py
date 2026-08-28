@@ -9,6 +9,7 @@ import platform
 import tempfile
 
 from alpha_doctor import core_ready, run_checks
+from portable_crypto import CRYPTOGRAPHY_PIN, portable_crypto_status
 from runtime_database import AT_REST_SCHEME, RuntimeDatabase
 from voice_runtime import VoiceRuntime
 from windows_crypto import protect_data, unprotect_data
@@ -52,6 +53,19 @@ def check_dpapi():
     except (OSError, ValueError) as error:
         return WindowsCheck("dpapi", "block", f"DPAPI protection failed: {error}")
     return WindowsCheck("dpapi", "pass", "current-user DPAPI round-trip passed")
+
+
+def check_portable_backup_crypto():
+    status = portable_crypto_status()
+    if not status.get("available"):
+        return WindowsCheck("portable_backup_crypto", "block", status.get("error", "portable crypto unavailable"))
+    if status.get("version") != CRYPTOGRAPHY_PIN:
+        return WindowsCheck("portable_backup_crypto", "block", "portable crypto dependency is not the reviewed pin")
+    return WindowsCheck(
+        "portable_backup_crypto",
+        "pass",
+        f"AES-256-GCM portable backup dependency pinned at cryptography=={CRYPTOGRAPHY_PIN}",
+    )
 
 
 def check_runtime_database(root=ROOT):
@@ -103,6 +117,7 @@ def run_windows_checks(*, env=None, platform_name=None, root=ROOT):
         check_windows(platform_name),
         check_private_data_writable(root),
         check_dpapi(),
+        check_portable_backup_crypto(),
         check_runtime_database(root),
         check_runtime_protection(root),
         check_voice_runtime(env),
