@@ -16,6 +16,8 @@ security gate.
 ## Current platform milestone
 
 - Platform Core: **`0.3-alpha`**
+- Repository-backed SAD completion: **Alpha Stable — 100%**
+- Repository-backed Forge completion: **Alpha Stable — 100%**
 - Platform manifest schema: **`3`**
 - HTTP API: **`v1`**
 - Core network binding: **loopback only**
@@ -142,6 +144,7 @@ python -m compileall -q .
 python -m unittest -v
 python protocol_black.py
 python release_gate.py
+python alpha_stable.py
 python alpha_doctor.py
 ```
 
