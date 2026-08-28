@@ -1,42 +1,68 @@
 # SAD local API v1
 
-The core API binds to loopback only and returns JSON. Protected endpoints require
-`Authorization: Bearer <session token>`. Start the complete browser product with
-`python alpha.py`, or start the API alone with `python api.py`.
+The core API binds to loopback only and returns JSON. Human protected endpoints require
+`Authorization: Bearer <session token>`. Scoped local-app endpoints use a separate
+`Authorization: SAD-App <client-id>.<secret>` credential and are intentionally limited
+to Platform control-plane reads.
 
-The optional mobile surface does **not** change that core binding. `mobile.py` starts
-a separate TLS-only paired gateway on one explicit private/overlay IPv4 address while
-the normal SAD API remains on loopback.
+Start the browser product with `python alpha.py`, or the API alone with `python api.py`.
+The optional mobile surface does **not** change the core binding. `mobile.py` starts a
+separate TLS-only paired gateway on one explicit private/overlay IPv4 address while the
+normal SAD API remains on loopback.
 
-## Core endpoints
+## Human/session endpoints
 
-- `GET /health` — established minimal `{status, api_version}` health contract
+### Health and authentication
+
+- `GET /health` — established minimal `{status, api_version}` contract
 - `POST /v1/auth/login`
 - `GET /v1/auth/me`
 - `POST /v1/auth/logout`
 - `POST /v1/auth/password`
-- `GET /v1/platform` — signed-in role-filtered SAD platform manifest and platform version
-- `GET /v1/platform/modules` — modules visible to the signed-in role
-- `GET /v1/platform/capabilities` — flattened capability catalog visible to the signed-in role
-- `GET /v1/chat/sessions` — list the signed-in account's active conversations
-- `POST /v1/chat/sessions` — start a new conversation
-- `GET /v1/chat/sessions/{session_id}` — load one owned conversation
-- `POST /v1/chat/sessions/{session_id}/messages` — send one message and persist the SAD reply
-- `POST /v1/chat/sessions/{session_id}/archive` — archive an owned conversation
-- `POST /v1/dev/workspaces/scope` — Owner/Developer asks the local model for file-scope suggestions only
-- `GET /v1/dev/workspaces` — development roles list coding workspaces
-- `POST /v1/dev/workspaces` — Owner/Developer creates an isolated workspace from an explicitly approved scope
-- `GET /v1/dev/workspaces/{workspace_id}` — development roles inspect task, scope, diff, tests, and evidence
-- `POST /v1/dev/workspaces/{workspace_id}/execute` — Owner/Developer generates scoped code and runs Docker verification
-- `POST /v1/dev/workspaces/{workspace_id}/apply` — Owner-only live application of the exact tested file set
-- `POST /v1/dev/workspaces/{workspace_id}/rollback` — Owner-only verified rollback of an applied workspace
-- `GET /v1/accounts` (owner)
-- `POST /v1/accounts` (role-permitted account creation)
-- `POST /v1/accounts/{account_id}/active` (owner)
-- `GET /v1/students` (teacher/owner roster and progress)
-- `POST /v1/mobile/pairings` (owner; creates a one-time 5-minute device code)
-- `GET /v1/mobile/devices` (owner)
-- `POST /v1/mobile/devices/{device_id}/revoke` (owner)
+
+### Platform Core
+
+- `GET /v1/platform` — signed-in role-filtered manifest
+- `GET /v1/platform/modules` — visible modules/capabilities
+- `GET /v1/platform/capabilities` — flattened visible capability catalog
+- `POST /v1/platform/compatibility` — role-filtered capability-version negotiation
+- `GET /v1/platform/clients` — Owner-only local-app list
+- `POST /v1/platform/clients` — Owner-only local-app creation
+- `POST /v1/platform/clients/{client_id}/rotate` — Owner-only secret rotation
+- `POST /v1/platform/clients/{client_id}/revoke` — Owner-only revocation
+- `POST /v1/platform/events/read` — Owner-only metadata event inspection
+
+### SAD Chat and Voice
+
+- `GET /v1/chat/sessions`
+- `POST /v1/chat/sessions`
+- `GET /v1/chat/sessions/{session_id}`
+- `POST /v1/chat/sessions/{session_id}/messages`
+- `POST /v1/chat/sessions/{session_id}/archive`
+- `POST /v1/voice/turn` — signed-in transcript bridge into the same account-owned SAD conversation engine
+
+### Developer Workspace
+
+- `POST /v1/dev/workspaces/scope`
+- `GET /v1/dev/workspaces`
+- `POST /v1/dev/workspaces`
+- `GET /v1/dev/workspaces/{workspace_id}`
+- `POST /v1/dev/workspaces/{workspace_id}/execute`
+- `POST /v1/dev/workspaces/{workspace_id}/apply`
+- `POST /v1/dev/workspaces/{workspace_id}/rollback`
+
+### Accounts and mobile trust
+
+- `GET /v1/accounts`
+- `POST /v1/accounts`
+- `POST /v1/accounts/{account_id}/active`
+- `GET /v1/students`
+- `POST /v1/mobile/pairings`
+- `GET /v1/mobile/devices`
+- `POST /v1/mobile/devices/{device_id}/revoke`
+
+### Failure/repair governance
+
 - `POST /v1/failures`
 - `POST /v1/jobs`
 - `GET /v1/jobs/{work_item_id}`
@@ -47,157 +73,233 @@ the normal SAD API remains on loopback.
 - `POST /v1/failures/{failure_id}/push`
 - `POST /v1/jobs/{work_item_id}/approve-isolated`
 - `POST /v1/jobs/{work_item_id}/start`
-- `POST /v1/jobs/{work_item_id}/execute` (host-controlled repair draft + isolated verification)
+- `POST /v1/jobs/{work_item_id}/execute`
 - `POST /v1/jobs/{work_item_id}/result`
 - `POST /v1/jobs/{work_item_id}/decision`
 - `POST /v1/jobs/{work_item_id}/close`
 
-## Platform Core semantics
+### Learning
 
-Platform Core gives SAD clients one stable discovery surface for Chat, Study, Forge,
-Developer Workspace, repair governance, accounts, Mobile, and future modules.
+- `POST /v1/study/plan`
+- `POST /v1/forge/quests`
+- `POST /v1/forge/hint`
+- `POST /v1/forge/complete`
+- `GET /v1/forge/progress`
+- `GET /v1/forge/progress/{student_account_id}`
 
-The detailed platform endpoints require a valid SAD login. Their output is filtered by
-the signed-in role's existing permission set. A Student does not receive Owner coding
-or account-management capabilities; a Viewer receives development visibility but not
-work/govern authority; an Owner receives the full Alpha role-permitted catalog.
+## Platform Core v0.2 semantics
+
+Platform Core gives clients one discovery and compatibility surface for the whole SAD
+platform. The API contract stays `v1`; Platform Core is separately versioned as
+`0.2-alpha`, manifest schema `2`.
+
+Each capability now reports:
+
+- `capability_version` (`major.minor.patch`)
+- `lifecycle` (`alpha`, `stable`, or `deprecated`)
+- optional `replacement`
+- routes
+- permission requirement
+- whether it mutates state
+- whether it crosses a human-approval boundary
 
 Platform metadata is descriptive only. A returned capability does not authorize its
 route. The concrete route performs its normal authentication, permission, workflow,
-source-hash, isolation, and human-approval checks independently.
+source-hash, isolation, and approval checks independently.
 
-The platform manifest reports this boundary explicitly through
-`platform_metadata_grants_authority: false` and `git_authority: human_host_only`.
+### Compatibility request
 
-See `PLATFORM.md` for module/capability shapes and client integration rules.
-
-## SAD Chat semantics
-
-SAD Chat is the general free-form conversation surface. It is distinct from Personal
-Study, Forge quests, and the governed repair workflow.
-
-- Chat sessions belong to exactly one account and cannot be read by another account.
-- Active history is persisted in local `chat_history.json`, which is excluded from Git
-  and written with owner-only file permissions where the operating system supports it.
-- Only recent turns are supplied to the local model for conversational context; the
-  full saved transcript is not blindly inserted into every prompt.
-- When the configured loopback local model is available, chat replies use that model
-  and report `engine: local_model`.
-- If the local model is unavailable, SAD falls back to its built-in dialogue layer and
-  reports `engine: built_in` rather than pretending a model-generated answer occurred.
-- Conversation text does not grant tool, repair, approval, coding-workspace, or Git
-  authority. Those actions remain behind their existing explicit governed endpoints.
-
-## Developer Workspace semantics
-
-Developer Workspace is SAD's general multi-file coding lane. It does not replace the
-narrow failure-driven repair workflow.
-
-### Scope planning
-
-`POST /v1/dev/workspaces/scope` requires `development:work`. The local model receives
-the task plus eligible project file names and may suggest up to 20 source paths. It
-writes no code and persists no workspace. The returned paths are recommendations for
-human review only.
-
-### Workspace creation
-
-`POST /v1/dev/workspaces` requires `development:work` and accepts:
+`POST /v1/platform/compatibility` accepts:
 
 ```json
 {
-  "task": "Build the feature",
-  "allowed_paths": ["api.py", "web/app.js", "test_feature.py"]
+  "requirements": [
+    {"capability_id": "voice:conversation", "min_version": "1.0.0"}
+  ]
 }
 ```
 
-Creation captures source hashes and makes a private `.sad_dev/<uuid>/worktree` copy.
-Git control metadata, `.github`, private runtime JSON, credentials, environment
-secrets, local data, and other protected paths are excluded from the coding copy.
+The result reports whether each capability is visible to the signed-in role and whether
+the available version meets the minimum. A capability hidden from that role is reported
+unavailable, not leaked through negotiation metadata.
 
-### Execution
+## Local app credentials
 
-`POST /v1/dev/workspaces/{id}/execute` requires `development:work`.
+Owner can create a local app credential through the Platform screen or
+`POST /v1/platform/clients`:
 
-The configured local model receives source context only for the explicitly approved
-paths. It returns a strict JSON full-file edit plan. SAD rejects unapproved paths,
-duplicate edits, malformed JSON, no-op edits, unsupported/binary file types, and
-oversized context/output.
+```json
+{
+  "name": "Workshop status panel",
+  "capability_ids": ["platform:discover", "platform:events"],
+  "event_types": ["failure.created"]
+}
+```
 
-Edits occur only inside the private worktree. SAD then runs the repository unittest
-suite through the same digest-pinned, networkless, non-root Docker boundary used by
-repair verification. The response includes the exact unified diff, changed path list,
-test output, and integrity evidence. Failed or unavailable isolation never becomes an
-applyable state.
+Allowed machine scopes are deliberately narrow:
 
-### Application and rollback
+- `platform:discover`
+- `platform:catalog`
+- `platform:modules`
+- `platform:compatibility`
+- `platform:events`
 
-`POST /v1/dev/workspaces/{id}/apply` requires Owner-only `development:govern`.
-Developer, Reviewer, Viewer, Student, Teacher, and the coding model cannot call the
-live application boundary successfully.
+The creation/rotation response includes `client_secret` once. `platform_clients.json`
+stores only a salted hash. Listing never returns the secret/hash/salt. Rotation
+invalidates the previous secret. Revocation disables the app.
 
-Before the first write SAD verifies every changed live path still matches its captured
-base hash and every worktree path still matches the exact post-test hash. Existing
-files are backed up. The exact tested file set is then applied. If any file operation
-or verification fails, SAD restores and verifies the whole original set.
+A machine credential is not a user session. Supplying `SAD-App ...` to a normal Chat,
+Study, Forge, coding, repair, account, or admin route fails the Bearer-session gate.
 
-`POST /v1/dev/workspaces/{id}/rollback` is also Owner-only and refuses rollback if a
-live target changed after application. Git commands are never invoked by either
-operation.
+## Machine-client endpoints
 
-See `DEVELOPER_WORKSPACE.md` for the complete contract.
+These endpoints are available only on the loopback core API. The mobile gateway blocks
+the entire `/v1/platform/client/*` path family even for a `full_role` paired device.
+
+All are `POST`:
+
+- `/v1/platform/client/manifest` — requires `platform:discover`
+- `/v1/platform/client/catalog` — requires `platform:catalog`
+- `/v1/platform/client/modules` — requires `platform:modules`
+- `/v1/platform/client/compatibility` — requires `platform:compatibility`
+- `/v1/platform/client/events` — requires `platform:events`
+
+Machine manifests explicitly report:
+
+- principal kind `local_app`
+- `user_impersonation: false`
+- `state_mutation: false`
+- `dynamic_extension_execution: false`
+- `git_authority: none`
+
+See `PLATFORM_SDK.md` for the Python helper and examples.
+
+## Platform event semantics
+
+`platform_events.py` maintains a bounded metadata-only event log in private
+`platform_events.json`.
+
+An event contains:
+
+- monotonic `seq`
+- UUID `event_id`
+- `event_type`
+- timestamp
+- optional `subject_id`
+- small bounded `details` object
+
+The event layer deliberately excludes conversation text, generated code, diffs,
+passwords, session/app/device secrets, student work, and other high-value payloads.
+
+A local app sees only event types explicitly approved on its stored client record. An
+empty subscription returns no events. Unsupported event types fail closed.
+
+## Voice Client Bridge
+
+`POST /v1/voice/turn` requires a normal signed-in SAD user session. It accepts:
+
+```json
+{
+  "session_id": "optional-existing-chat-session-id",
+  "transcript": "What should I check first?"
+}
+```
+
+If `session_id` is absent, SAD creates a normal account-owned chat session. The
+transcript goes through the same conversation history/model path as SAD Chat.
+
+Response:
+
+```json
+{
+  "session_id": "...",
+  "reply": "...",
+  "speech_text": "...",
+  "engine": "local_model",
+  "input_mode": "transcript",
+  "output_mode": "text_for_local_tts"
+}
+```
+
+This milestone does not bundle browser microphone capture, STT, or TTS. The endpoint
+is the stable transport contract those future local voice clients can call. It grants
+no repair, coding, app-management, account, or Git authority.
+
+Learning-mode phones may call `/v1/voice/turn` after the normal paired-device gate and
+user login.
+
+## SAD Chat semantics
+
+SAD Chat is the general free-form conversation surface, separate from Personal Study,
+Forge quests, Developer Workspace, and repair governance.
+
+- Sessions belong to exactly one account.
+- Active history persists in ignored `chat_history.json`.
+- Only recent turns are supplied to the configured local model for context.
+- Model replies report `engine: local_model`; unavailable model uses and reports
+  `engine: built_in`.
+- Conversation wording cannot itself approve repairs, create coding authority, apply
+  files, manage apps, commit, push, or merge.
+
+## Developer Workspace semantics
+
+Developer Workspace is the broad multi-file coding lane; the failure-driven repair flow
+remains the narrow self-correction lane.
+
+`development:work` may plan/create/execute an explicitly scoped private workspace.
+Generation sees only approved paths. `.git`, `.github`, environment secrets, private
+runtime data, hidden paths, and unsupported/binary files are excluded.
+
+The full repository unittest suite runs through the digest-pinned, networkless,
+non-root Docker boundary. Failed/unavailable isolation cannot become applyable.
+
+Only Owner `development:govern` can apply or rollback the exact tested file set. Before
+application SAD rechecks live base hashes and post-test worktree hashes. Existing files
+are backed up and a failed multi-file operation restores/verifies the whole original
+set. Developer Workspace never invokes Git.
+
+See `DEVELOPER_WORKSPACE.md` for the full contract.
 
 ## Mobile gateway endpoints
 
 These exist only on the paired TLS mobile gateway:
 
-- `POST /mobile/pair` — consumes a valid one-time pairing code and sets the paired-device credential as a `Secure`, `HttpOnly`, `SameSite=Strict` cookie
-- `GET /mobile/status` — verifies the paired-device cookie and returns public device metadata
-- `POST /mobile/forget` — revokes the current paired device and clears the device cookie
+- `POST /mobile/pair`
+- `GET /mobile/status`
+- `POST /mobile/forget`
 
-A phone must pass the device gate **and** the normal account-login gate. Pairing never
-creates a user session and never substitutes for SAD role authorization.
+A phone must pass device trust **and** normal SAD account login. Pairing never creates a
+user session.
 
-### Mobile device modes
+### Mobile modes
 
-- `learning`: admits SAD Chat, account-self, Personal Study, Forge play, and own-progress routes only. Chat routes are matched explicitly rather than by a broad prefix. Developer Workspace and Platform development surfaces are denied.
-- `full_role`: the gateway admits the normal API surface, then SAD's existing RBAC
-  decides what the signed-in role may actually do. An Owner can use Code Workspace
-  and the read-only Platform dashboard; a Developer can prepare/test but still cannot
-  apply; lower roles retain their limits.
+- `learning`: account-self, SAD Chat, Voice bridge, Personal Study, Forge play, and own
+  progress through explicit route matching. Developer/admin/machine-client routes are
+  denied.
+- `full_role`: normal user routes are admitted and SAD RBAC remains authoritative, but
+  machine-client `/v1/platform/client/*` routes are still blocked at the gateway.
 
-The device credential is hashed at rest and is never available to browser JavaScript.
-The service worker excludes `/v1/*` and `/mobile/*` traffic, including conversation,
-platform discovery, and Developer Workspace API data, from caching.
+The paired-device credential remains a `Secure`, `HttpOnly`, `SameSite=Strict` cookie.
+The PWA service worker excludes all `/v1/*` and `/mobile/*` traffic from caching.
 
-### Repair decision semantics
+## Repair decision semantics
 
-`execute` asks Forge to create one scoped repair draft for an approved target and
-runs the resulting sandbox copy through the configured Docker verification boundary.
-A successful result contains the exact diff plus an execution receipt that correlates
-the tested proposal.
+Repair execution creates one scoped local-model draft and verifies the changed sandbox
+through the configured Docker boundary. Successful results contain exact diff/test
+artifacts and a correlated execution receipt.
 
 For `decision: approve`:
 
-- **Owner:** SAD requires a successful Forge result and applyable proposal receipt,
-  marks that sandbox draft human-approved, verifies the live target still matches
-  the proposal source hash, then atomically applies the exact tested file. A backup
-  is retained under the proposal directory. Git commit/push/merge is never invoked.
-- **Reviewer:** records the human review decision only. Reviewer approval does not
-  apply a live file.
+- **Owner:** may apply the exact tested proposal after stale-source validation, atomic
+  replacement, hash verification, and backup creation.
+- **Reviewer:** records review evidence only; no live application.
 - **Developer/Forge:** cannot approve.
 
-`decision: reject` never applies a file. `close` remains an Owner governance action.
+Reject never applies. Close remains Owner governance. No repair path invokes Git
+commit/push/merge authority.
 
-## Learning endpoints
+## Learning semantics
 
-- `POST /v1/study/plan` (`generate: true` requests configured local-model output)
-- `POST /v1/forge/quests`
-- `POST /v1/forge/hint`
-- `POST /v1/forge/complete`
-- `GET /v1/forge/progress`
-- `GET /v1/forge/progress/{student_account_id}` (teacher/owner)
-
-SAD owns approval, live application, and closure. Forge may draft and test approved
-repair work; the general coding agent may draft and test approved Developer Workspace
-scope. Neither has API authority for Owner approval, Git commit, push, or merge.
+Personal Study follows the requested help mode. Forge supplies quests, hints, mastery,
+XP/rank/companion progression, and durable student progress. Neither learning surface
+inherits repair, app-management, code-application, or Git authority.

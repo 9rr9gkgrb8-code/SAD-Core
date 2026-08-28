@@ -37,6 +37,8 @@ class ReleaseGateTests(unittest.TestCase):
             "chat_history.json",
             "dashboard_state.json",
             "failures.json",
+            "platform_clients.json",
+            "platform_events.json",
             "settings.json",
             "student_progress.json",
         ):

@@ -1,24 +1,26 @@
-"""Loopback-only stable HTTP/JSON API for SAD Core."""
+"""Loopback-only stable HTTP/JSON API for the SAD local AI platform."""
 
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import mimetypes
 from pathlib import Path
 import re
-import mimetypes
 
 from auth import AuthService, ROLE_PERMISSIONS
 from conversation import ConversationStore, generate_chat_reply
 from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
+from forge_worker import verify_approved_job
 from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
-from platform_registry import PlatformRegistry
+from platform_clients import PlatformClientStore
+from platform_events import PlatformEventStore
+from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
 from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from study_generator import generate_study_result
-from forge_worker import verify_approved_job
 
 
 API_VERSION = "v1"
@@ -29,6 +31,7 @@ class SadApiService:
     def __init__(
         self, auth=None, dashboard=None, progress=None, mobile_access=None,
         conversations=None, developer_workspaces=None, platform=None,
+        platform_clients=None, platform_events=None,
     ):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
@@ -37,6 +40,9 @@ class SadApiService:
         self.conversations = conversations or ConversationStore()
         self.developer_workspaces = developer_workspaces or DeveloperWorkspaceStore()
         self.platform = platform or PlatformRegistry()
+        self.platform_clients = platform_clients or PlatformClientStore()
+        self.platform_events = platform_events or PlatformEventStore()
+        self.last_event_error = None
 
     def token(self, headers):
         value = headers.get("Authorization", "")
@@ -44,9 +50,87 @@ class SadApiService:
             raise PermissionError("Bearer authentication is required.")
         return value[7:]
 
+    def _publish(self, event_type, *, subject_id=None, details=None):
+        """Events are auxiliary metadata; an event-store problem must not corrupt a completed primary action."""
+        try:
+            self.platform_events.publish(event_type, subject_id=subject_id, details=details)
+            self.last_event_error = None
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            self.last_event_error = str(error)
+
+    def _machine_manifest(self, client):
+        route_map = {
+            "platform:discover": [{"method": "POST", "path": "/v1/platform/client/manifest"}],
+            "platform:catalog": [{"method": "POST", "path": "/v1/platform/client/catalog"}],
+            "platform:modules": [{"method": "POST", "path": "/v1/platform/client/modules"}],
+            "platform:compatibility": [{"method": "POST", "path": "/v1/platform/client/compatibility"}],
+            "platform:events": [{"method": "POST", "path": "/v1/platform/client/events"}],
+        }
+        capabilities = []
+        for capability_id in client["capability_ids"]:
+            capability = self.platform.capabilities.get(capability_id)
+            if not capability:
+                continue
+            item = capability.to_dict()
+            item["routes"] = route_map.get(capability_id, [])
+            capabilities.append(item)
+        return {
+            "product": "SAD",
+            "platform_version": PLATFORM_VERSION,
+            "platform_schema_version": PLATFORM_SCHEMA_VERSION,
+            "api_version": API_VERSION,
+            "principal": {"kind": "local_app", "client_id": client["client_id"], "name": client["name"]},
+            "capability_count": len(capabilities),
+            "capabilities": capabilities,
+            "event_types": list(client["event_types"]),
+            "authority_model": {
+                "authentication": "scoped_sad_app_secret",
+                "user_impersonation": False,
+                "state_mutation": False,
+                "dynamic_extension_execution": False,
+                "git_authority": "none",
+            },
+        }
+
+    def _dispatch_platform_client(self, method, path, headers, body):
+        if method != "POST":
+            raise KeyError("Endpoint not found.")
+        authorization = headers.get("Authorization", "")
+        if path == "/v1/platform/client/manifest":
+            client = self.platform_clients.require(authorization, "platform:discover")
+            return 200, self._machine_manifest(client)
+        if path == "/v1/platform/client/catalog":
+            client = self.platform_clients.require(authorization, "platform:catalog")
+            manifest = self._machine_manifest(client)
+            return 200, {"capabilities": manifest["capabilities"]}
+        if path == "/v1/platform/client/modules":
+            client = self.platform_clients.require(authorization, "platform:modules")
+            manifest = self._machine_manifest(client)
+            return 200, {"modules": [{
+                "module_id": "sad.platform",
+                "name": "SAD Platform Core",
+                "kind": "core",
+                "status": "available",
+                "module_version": "2.0.0",
+                "capabilities": manifest["capabilities"],
+            }]}
+        if path == "/v1/platform/client/compatibility":
+            client = self.platform_clients.require(authorization, "platform:compatibility")
+            return 200, self.platform.compatibility(body.get("requirements", []), client["capability_ids"])
+        if path == "/v1/platform/client/events":
+            client = self.platform_clients.require(authorization, "platform:events")
+            return 200, self.platform_events.read(
+                after_seq=body.get("after_seq", 0),
+                limit=body.get("limit", 100),
+                event_types=client["event_types"],
+            )
+        raise KeyError("Endpoint not found.")
+
     def dispatch(self, method, path, headers, body):
         if method == "GET" and path == "/health":
             return 200, {"status": "ok", "api_version": API_VERSION}
+        if path.startswith("/v1/platform/client/"):
+            return self._dispatch_platform_client(method, path, headers, body)
         if method == "POST" and path == "/v1/auth/login":
             token = self.auth.login(body.get("username", ""), body.get("password", ""))
             if not token:
@@ -57,6 +141,7 @@ class SadApiService:
         account = self.auth.require(token)
         account_id = account["account_id"]
         permissions = ROLE_PERMISSIONS[account["role"]]
+
         if method == "GET" and path == "/v1/auth/me":
             return 200, {"account": account, "profile": self.auth.get_profile(token)}
         if method == "POST" and path == "/v1/auth/logout":
@@ -72,11 +157,43 @@ class SadApiService:
             return 200, {"capabilities": self.platform.catalog(permissions)}
         if method == "GET" and path == "/v1/platform/modules":
             return 200, {"modules": self.platform.visible_modules(permissions)}
+        if method == "POST" and path == "/v1/platform/compatibility":
+            allowed = self.platform.allowed_capability_ids(permissions)
+            return 200, self.platform.compatibility(body.get("requirements", []), allowed)
+        if method == "GET" and path == "/v1/platform/clients":
+            self.auth.require(token, "platform:manage")
+            return 200, {"clients": self.platform_clients.list()}
+        if method == "POST" and path == "/v1/platform/clients":
+            self.auth.require(token, "platform:manage")
+            client = self.platform_clients.create(
+                body.get("name", ""), body.get("capability_ids", []), body.get("event_types", []),
+            )
+            self._publish("platform.client.created", subject_id=client["client_id"], details={"name": client["name"]})
+            return 201, client
+        match = re.fullmatch(r"/v1/platform/clients/([0-9a-f-]+)/(rotate|revoke)", path)
+        if method == "POST" and match:
+            self.auth.require(token, "platform:manage")
+            client_id, action = match.groups()
+            if action == "rotate":
+                client = self.platform_clients.rotate(client_id)
+                self._publish("platform.client.rotated", subject_id=client_id)
+            else:
+                client = self.platform_clients.revoke(client_id)
+                self._publish("platform.client.revoked", subject_id=client_id)
+            return 200, client
+        if method == "POST" and path == "/v1/platform/events/read":
+            self.auth.require(token, "platform:manage")
+            return 200, self.platform_events.read(
+                after_seq=body.get("after_seq", 0), limit=body.get("limit", 100),
+                event_types=body.get("event_types"),
+            )
 
         if method == "GET" and path == "/v1/chat/sessions":
             return 200, {"sessions": self.conversations.list_sessions(account_id)}
         if method == "POST" and path == "/v1/chat/sessions":
-            return 201, self.conversations.create_session(account_id)
+            session = self.conversations.create_session(account_id)
+            self._publish("chat.session.created", subject_id=session.get("session_id"))
+            return 201, session
         match = re.fullmatch(r"/v1/chat/sessions/([0-9a-f-]+)", path)
         if method == "GET" and match:
             return 200, self.conversations.get_session(account_id, match.group(1))
@@ -84,12 +201,38 @@ class SadApiService:
         if method == "POST" and match:
             session_id, action = match.groups()
             if action == "archive":
-                return 200, self.conversations.archive_session(account_id, session_id)
+                archived = self.conversations.archive_session(account_id, session_id)
+                self._publish("chat.session.archived", subject_id=session_id)
+                return 200, archived
             session = self.conversations.raw_session(account_id, session_id)
             profile = self.auth.get_profile(token)
             reply, engine = generate_chat_reply(body.get("message", ""), profile, session)
             updated = self.conversations.append_turn(account_id, session_id, body.get("message", ""), reply, engine)
+            self._publish("chat.message.created", subject_id=session_id, details={"engine": engine})
             return 200, {"reply": reply, "engine": engine, "session": updated}
+
+        if method == "POST" and path == "/v1/voice/turn":
+            transcript = body.get("transcript", "")
+            if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 20_000:
+                raise ValueError("Voice transcript must be 1-20000 characters.")
+            session_id = body.get("session_id")
+            if session_id is None:
+                created = self.conversations.create_session(account_id)
+                session_id = created["session_id"]
+                self._publish("chat.session.created", subject_id=session_id)
+            session = self.conversations.raw_session(account_id, session_id)
+            profile = self.auth.get_profile(token)
+            reply, engine = generate_chat_reply(transcript.strip(), profile, session)
+            self.conversations.append_turn(account_id, session_id, transcript.strip(), reply, engine)
+            self._publish("voice.turn.completed", subject_id=session_id, details={"engine": engine})
+            return 200, {
+                "session_id": session_id,
+                "reply": reply,
+                "speech_text": reply,
+                "engine": engine,
+                "input_mode": "transcript",
+                "output_mode": "text_for_local_tts",
+            }
 
         if method == "POST" and path == "/v1/dev/workspaces/scope":
             self.auth.require(token, "development:work")
@@ -99,9 +242,9 @@ class SadApiService:
             return 200, {"workspaces": self.developer_workspaces.list()}
         if method == "POST" and path == "/v1/dev/workspaces":
             self.auth.require(token, "development:work")
-            return 201, self.developer_workspaces.create(
-                body.get("task", ""), body.get("allowed_paths", []), account_id,
-            )
+            workspace = self.developer_workspaces.create(body.get("task", ""), body.get("allowed_paths", []), account_id)
+            self._publish("development.workspace.created", subject_id=workspace.get("workspace_id"))
+            return 201, workspace
         match = re.fullmatch(r"/v1/dev/workspaces/([0-9a-f-]+)(?:/(execute|apply|rollback))?", path)
         if match:
             workspace_id, action = match.groups()
@@ -110,13 +253,19 @@ class SadApiService:
                 return 200, self.developer_workspaces.get(workspace_id)
             if method == "POST" and action == "execute":
                 self.auth.require(token, "development:work")
-                return 200, self.developer_workspaces.execute(workspace_id)
+                workspace = self.developer_workspaces.execute(workspace_id)
+                self._publish("development.workspace.executed", subject_id=workspace_id, details={"state": workspace.get("state")})
+                return 200, workspace
             if method == "POST" and action == "apply":
                 self.auth.require(token, "development:govern")
-                return 200, self.developer_workspaces.apply(workspace_id)
+                workspace = self.developer_workspaces.apply(workspace_id)
+                self._publish("development.workspace.applied", subject_id=workspace_id)
+                return 200, workspace
             if method == "POST" and action == "rollback":
                 self.auth.require(token, "development:govern")
-                return 200, self.developer_workspaces.rollback(workspace_id)
+                workspace = self.developer_workspaces.rollback(workspace_id)
+                self._publish("development.workspace.rolled_back", subject_id=workspace_id)
+                return 200, workspace
 
         if method == "GET" and path == "/v1/accounts":
             return 200, {"accounts": self.auth.list_accounts(token)}
@@ -149,7 +298,9 @@ class SadApiService:
                 body.get("evidence") or [{"reported_by": account_id}],
                 body.get("suggested_correction", "Review the evidence."), body.get("affected_files", []),
             )
-            return 201, asdict(self.dashboard.ingest(event))
+            failure = asdict(self.dashboard.ingest(event))
+            self._publish("failure.created", subject_id=failure.get("failure_id"), details={"category": body["category"]})
+            return 201, failure
         if method == "GET" and path == "/v1/dashboard":
             return 200, self.dashboard.snapshot(token)
         if method == "GET" and path in {"/v1/dashboard/failures", "/v1/dashboard/jobs"}:
@@ -208,7 +359,9 @@ class SadApiService:
         if method == "POST" and path == "/v1/forge/quests":
             self.auth.require(token, "forge:play")
             quest = homework_to_quest(body["subject"], body["assignment"], body.get("learning_objective", ""))
-            return 201, asdict(quest)
+            payload = asdict(quest)
+            self._publish("forge.quest.created", subject_id=payload.get("quest_id"), details={"subject": body["subject"]})
+            return 201, payload
         if method == "GET" and path == "/v1/forge/progress":
             self.auth.require(token, "progress:own")
             return 200, self.progress.get(account_id).to_dict()
@@ -228,6 +381,7 @@ class SadApiService:
             progress = self.progress.get(account_id)
             outcome = complete_quest(progress, quest, body["score"], body["boss_passed"])
             self.progress.save(progress)
+            self._publish("forge.quest.completed", subject_id=quest.quest_id, details={"mastered": bool(outcome.get("mastered")) if isinstance(outcome, dict) else False})
             return 200, {"outcome": outcome, "progress": progress.to_dict()}
         raise KeyError("Endpoint not found.")
 
