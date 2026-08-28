@@ -7,13 +7,16 @@ on:
 permissions:
   contents: read
 
+env:
+  SAD_CI_SANDBOX_IMAGE: python@sha256:1042b61448fef4ba92d16a8c7eb4996d027568ce64792a7877fd88511e0af7c6
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 reviewed 2026-08-27
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed 2026-08-27
         with:
           python-version: "3.11"
       - name: Compile
@@ -42,18 +45,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 reviewed 2026-08-27
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5 reviewed 2026-08-27
         with:
           python-version: "3.11"
-      - name: Preload and pin reviewed Python image
+      - name: Preload reviewed digest-pinned Python image
         shell: bash
         run: |
-          docker pull python:3.11-slim
-          IMAGE="$(docker image inspect python:3.11-slim --format '{{index .RepoDigests 0}}')"
-          test -n "$IMAGE"
-          echo "SAD_SANDBOX_IMAGE=$IMAGE" >> "$GITHUB_ENV"
-          echo "Pinned sandbox image: $IMAGE"
+          docker pull "$SAD_CI_SANDBOX_IMAGE"
+          docker image inspect "$SAD_CI_SANDBOX_IMAGE" >/dev/null
+          echo "SAD_SANDBOX_IMAGE=$SAD_CI_SANDBOX_IMAGE" >> "$GITHUB_ENV"
+          echo "Pinned sandbox image: $SAD_CI_SANDBOX_IMAGE"
       - name: Alpha preflight with Docker
         run: python alpha_doctor.py
       - name: Docker isolation proof
