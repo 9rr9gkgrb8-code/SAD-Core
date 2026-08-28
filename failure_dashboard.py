@@ -12,11 +12,14 @@ import threading
 from functools import wraps
 
 from live_apply import apply_approved_proposal, rollback_applied_proposal
+from runtime_document import RuntimeJSONDocument
 from sad_forge_contract import Artifact, ForgeResult, RepairRequest
 from sandbox import approve_sandbox_proposal
 
 
 DASHBOARD_STATE_FILE = Path(__file__).with_name("dashboard_state.json")
+DASHBOARD_NAMESPACE = "dashboard_state"
+MAX_DASHBOARD_BYTES = 12_000_000
 
 
 def synchronized(method):
@@ -88,12 +91,43 @@ class DevWorkItem:
     assigned_to: str | None = None
 
 
+def _validate_dashboard_data(data):
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise ValueError("Unsupported dashboard state schema.")
+    if not isinstance(data.get("failures"), list) or not isinstance(data.get("development"), list):
+        raise ValueError("Invalid dashboard state.")
+    if len(data["failures"]) > 20_000 or len(data["development"]) > 20_000:
+        raise ValueError("Dashboard state is unexpectedly large.")
+    return data
+
+
+def _is_live_dashboard_path(path):
+    try:
+        return Path(path).resolve() == DASHBOARD_STATE_FILE.resolve()
+    except OSError:
+        return Path(path) == DASHBOARD_STATE_FILE
+
+
 class FailureDashboard:
     """One durable workflow; authentication determines available actions."""
 
-    def __init__(self, auth_service=None, state_file=None):
+    def __init__(self, auth_service=None, state_file=None, database=None):
         self.auth_service = auth_service
-        self.state_file = Path(state_file) if state_file else None
+        self.persistence = None
+        if state_file is None:
+            self.state_file = None
+        elif _is_live_dashboard_path(state_file):
+            self.persistence = RuntimeJSONDocument(
+                "dashboard_state.json",
+                DASHBOARD_NAMESPACE,
+                {"schema_version": 1, "event_sequence": 0, "failures": [], "development": []},
+                _validate_dashboard_data,
+                MAX_DASHBOARD_BYTES,
+                database=database,
+            )
+            self.state_file = self.persistence.path
+        else:
+            self.state_file = Path(state_file)
         self.failures = {}
         self.by_signature = {}
         self.dev_items = {}
@@ -102,11 +136,17 @@ class FailureDashboard:
         self._load()
 
     def _load(self):
-        if not self.state_file or not self.state_file.exists():
+        if self.persistence is not None:
+            data = self.persistence.load()
+        elif self.state_file and self.state_file.exists():
+            if self.state_file.is_symlink() or not self.state_file.is_file():
+                raise ValueError("Dashboard state path must be a regular file.")
+            if self.state_file.stat().st_size > MAX_DASHBOARD_BYTES:
+                raise ValueError("Dashboard state is unexpectedly large.")
+            data = json.loads(self.state_file.read_text(encoding="utf-8"))
+        else:
             return
-        data = json.loads(self.state_file.read_text(encoding="utf-8"))
-        if data.get("schema_version") != 1:
-            raise ValueError("Unsupported dashboard state schema.")
+        _validate_dashboard_data(data)
         self.event_sequence = data.get("event_sequence", 0)
         for raw in data.get("failures", []):
             event = FailureEvent(**raw)
@@ -124,6 +164,10 @@ class FailureDashboard:
             "failures": [asdict(item) for item in self.failures.values()],
             "development": [asdict(item) for item in self.dev_items.values()],
         }
+        _validate_dashboard_data(data)
+        if self.persistence is not None:
+            self.persistence.save(data)
+            return
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.state_file.with_suffix(".tmp")
         temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -297,4 +341,7 @@ class FailureDashboard:
     @synchronized
     def snapshot(self, actor_token):
         self._require(actor_token, "development:view")
-        return {"failures": [asdict(item) for item in self.failures.values()], "development": [asdict(item) for item in self.dev_items.values()]}
+        return {
+            "failures": [asdict(item) for item in self.failures.values()],
+            "development": [asdict(item) for item in self.dev_items.values()],
+        }
