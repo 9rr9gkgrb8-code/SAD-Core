@@ -27,13 +27,10 @@ class PlatformApiTests(unittest.TestCase):
     def headers(token):
         return {"Authorization": f"Bearer {token}"}
 
-    def test_health_advertises_platform_version_without_private_catalog(self):
+    def test_health_contract_stays_minimal_and_backward_compatible(self):
         status, payload = self.service.dispatch("GET", "/health", {}, {})
         self.assertEqual(status, 200)
-        self.assertEqual(payload["status"], "ok")
-        self.assertIn("platform_version", payload)
-        self.assertNotIn("modules", payload)
-        self.assertNotIn("capabilities", payload)
+        self.assertEqual(payload, {"status": "ok", "api_version": "v1"})
 
     def test_platform_discovery_requires_login(self):
         with self.assertRaises(PermissionError):
@@ -43,6 +40,7 @@ class PlatformApiTests(unittest.TestCase):
         _, manifest = self.service.dispatch("GET", "/v1/platform", self.headers(self.owner), {})
         module_ids = {module["module_id"] for module in manifest["modules"]}
         self.assertEqual(manifest["role"], "owner")
+        self.assertIn("platform_version", manifest)
         self.assertIn("sad.developer", module_ids)
         self.assertIn("sad.accounts", module_ids)
         self.assertFalse(manifest["authority_model"]["platform_metadata_grants_authority"])
