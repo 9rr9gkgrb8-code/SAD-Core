@@ -6,12 +6,12 @@ suite still runs separately in CI; Protocol Black is an additional fail-closed g
 
 from __future__ import annotations
 
-import sys
 import unittest
 
 
 BLACK_TEST_MODULES = (
     "test_protocol_black",
+    "test_protocol_black_supply_chain",
     "test_security_surface",
     "test_container_sandbox",
     "test_model_adapter",
