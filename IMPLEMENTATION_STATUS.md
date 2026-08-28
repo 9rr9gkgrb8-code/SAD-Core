@@ -1,13 +1,13 @@
 # SAD + Forge milestone status
 
-Updated: August 27, 2026
+Updated: August 28, 2026
 
 ## Architecture direction
 
 **SAD is the platform.** Chat, Voice, Personal Study, Forge Learning, Personal Memory,
 Governed Tool Actions, Developer Workspace, controlled repair, accounts/roles, Mobile,
-scoped local-app credentials, platform events, runtime persistence, backup/recovery, and
-at-rest protection are governed SAD modules or platform infrastructure.
+scoped local-app credentials, platform events, protected runtime persistence, and
+backup/recovery are governed SAD modules or platform infrastructure.
 
 The historical Protocol White independent `Forge-Core` Gate 2 remains paused under the
 current SAD-as-platform architecture. Protocol Black remains the active adversarial
@@ -21,100 +21,102 @@ security gate.
 - Core network binding: **loopback only**
 - Dynamic plugin execution: **disabled**
 - AI Git authority: **none**
-- Tier 2/3 default persistence: **versioned SQLite runtime database**
-- Windows Tier 2/3 payload protection: **current-user DPAPI**
-- Windows backup/recovery: **DPAPI-protected, hash-manifested verified workflow**
-- CI OS coverage: **Ubuntu 24.04 + Windows 2025 runners**
+- Default live persistence: **versioned SQLite runtime database**
+- Windows live payload protection: **current-user DPAPI**
+- Native Windows backup: **current-user DPAPI protected**
+- Portable disaster recovery: **passphrase AES-256-GCM + destination-user DPAPI re-key**
+- CI OS coverage: **Ubuntu 24.04 + Windows Server 2025 / Python 3.11 and 3.12**
 
-## Foundation Stabilization
+## Encryption Tier 2
 
-This milestone directly addresses the lowest senior-engineering readiness scores without
-pretending host/device work can be completed from GitHub.
+### Protected runtime database
 
-### Runtime database and Encryption Tier 1
+`local_data/sad_runtime.sqlite3` is the live/default document store for:
 
-`runtime_database.py` introduces `local_data/sad_runtime.sqlite3` with:
-
-- explicit database schema version;
-- named document namespaces and document schema versions;
-- bounded document/database size;
-- SQLite transactions, full synchronous writes, and busy timeout;
-- `quick_check` integrity validation;
-- consistent SQLite snapshot support;
-- validated one-time legacy JSON import;
-- verified import before protected legacy archival;
-- fail-closed conflict when both SQLite and legacy JSON look authoritative.
-
-On Windows, default live Tier 2/3 document payloads add:
-
-- current-user Windows DPAPI protection through `windows_crypto.py`;
-- no repository/runtime application master key;
-- purpose/namespace binding;
-- transactional plaintext-to-protected migration;
-- versioned protected envelopes and at-rest scheme metadata;
-- fail-closed rejection if plaintext appears after protection is declared;
-- a post-migration SQLite `VACUUM` to reduce ordinary plaintext remnants, without
-  claiming forensic secure erase.
-
-Default SQLite namespaces cover:
-
+- accounts and profiles;
+- Chat history;
+- Forge/student progress;
+- mobile pairing/device trust state;
+- failure records;
+- Owner/Developer dashboard evidence;
+- dialogue settings;
 - Personal Memory;
 - governed Tool Actions;
 - Platform local-app registrations;
-- Platform event history.
+- Platform events.
 
-Explicit custom JSON/SQLite paths remain supported for compatibility/test fixtures.
-Accounts, Chat/progress/settings/failure/mobile state remain compatible private stores for
-now and rely on host/full-disk/file encryption until their later persistence migration.
+On Windows, document payloads are DPAPI-protected before SQLite persistence. Passwords
+remain salted one-way PBKDF2 verifier data and are not made decryptable.
 
-### Backup/recovery
+Legacy JSON/record state is validated, imported, read back, and only then archived.
+Protected Windows startup DPAPI-protects new import archives and upgrades prior plaintext
+import archives. If both live encrypted state and a legacy live copy appear authoritative,
+startup fails closed.
 
-`backup.py` + `backup_manager.py` support:
+Explicit custom file paths remain supported for isolated tests and compatibility/recovery
+tools. They are not the live/default protected persistence claim.
+
+### Portable encrypted disaster recovery
+
+Tier 2 adds a second recovery format in addition to native DPAPI backups:
 
 ```text
-create encrypted -> decrypt/verify -> explicit offline restore
+live DPAPI DB -> host-neutral SQLite in memory -> verified archive
+              -> AES-256-GCM portable .sadbak
+              -> destination Windows restore
+              -> destination-user DPAPI DB -> staged live replacement
 ```
 
-The inner archive has per-file SHA-256, size/path manifesting, SQLite backup-API
-snapshots, SQLite integrity verification, traversal/undeclared/tamper rejection,
-external-destination enforcement, staged restore, explicit `--confirm`, and rollback of
-already-replaced files on restore failure.
+Portable backup uses the exact reviewed PyCA `cryptography` version pinned in
+`requirements.txt`, PBKDF2-HMAC-SHA256 passphrase derivation, a random per-backup salt,
+a random GCM nonce, and authenticated headers. The passphrase is prompted interactively,
+never accepted as a command-line argument, and never stored by SAD.
 
-On Windows, the complete verified inner archive is DPAPI-protected before the final
-`.sadbak` is written. Normal verify/restore rejects plaintext legacy archives. A dedicated
-`encrypt-legacy` command verifies an old ZIP and writes a new protected artifact without
-destroying the source.
+Wrong passphrases and modified ciphertext fail authenticated decryption. Portable restore
+is Windows-only because the final live database is re-protected with destination-user
+DPAPI before staged/live bytes are written.
 
-Tier 1 DPAPI backups are intentionally tied to the Windows protection context and are not
-yet a portable cross-machine encrypted archival format.
+Source-profile DPAPI legacy-import archives are excluded from portable recovery because
+they are rollback artifacts, not portable authoritative state.
 
-### Voice runtime
+### Native backup/recovery
 
-The existing authenticated `/v1/voice/turn` transcript bridge has a provider-neutral
-local audio layer:
+Native Windows backups remain current-user DPAPI protected and retain:
+
+- per-file SHA-256 manifesting;
+- path/size/undeclared-file rejection;
+- consistent SQLite snapshots;
+- SQLite integrity verification;
+- explicit `--confirm` before restore;
+- staged replacement;
+- rollback if a later replacement fails.
+
+Legacy plaintext backup migration remains explicit and fail-closed.
+
+## Voice runtime
+
+The authenticated `/v1/voice/turn` transcript bridge has a provider-neutral local audio
+layer:
 
 ```text
 WAV -> loopback STT -> SAD Voice -> loopback TTS -> WAV
 ```
 
-`voice_runtime.py` restricts STT/TTS to reviewed fixed contracts on loopback HTTP and
-bounds payloads/timeouts. `voice_client.py` orchestrates one authenticated audio turn.
-Speech services gain no SAD user/app/tool/coding/Git authority. Microphone capture and
-speaker playback remain real-client UAT.
+Speech services gain no SAD user/app/tool/coding/Git authority. Real microphone capture,
+speaker playback, and installed STT/TTS providers remain host/client UAT.
 
-### Windows readiness
+## Windows readiness
 
-CI executes compile, browser syntax, full suite, Protocol Black, release gate, and Alpha
-preflight on:
+CI executes dependency installation, compile, browser syntax, full suite, Protocol Black,
+release gate, and Alpha preflight on:
 
 - Ubuntu 24.04 / Python 3.11;
-- Windows Server 2025 runner / Python 3.11;
-- Windows Server 2025 runner / Python 3.12.
+- Windows Server 2025 / Python 3.11;
+- Windows Server 2025 / Python 3.12.
 
-Windows security tests now exercise real DPAPI round-trip/tamper behavior, raw SQLite
-ciphertext absence, protected migration/downgrade rejection, and encrypted backup/restore.
-`windows_doctor.py` requires Windows, Alpha core readiness, writable private data, DPAPI
-round-trip, SQLite integrity, and active runtime payload protection.
+Windows doctor requires real current-user DPAPI, SQLite integrity, active runtime payload
+protection, and the exact reviewed portable-backup crypto dependency. Docker isolation
+proof remains digest-pinned and separately gated.
 
 ## Existing completed capabilities
 
@@ -143,10 +145,11 @@ python release_gate.py
 python alpha_doctor.py
 ```
 
-The CI matrix must pass on all declared Ubuntu/Windows Python legs. Automatic coding and
-repair additionally require the digest-pinned Docker proof. Encryption Tier 1 adds
-`ENCRYPTION.md`, `windows_crypto.py`, and Windows encryption tests to the release-required
-surface.
+All declared Ubuntu/Windows Python legs must pass. Windows additionally runs
+`windows_doctor.py`. Automatic coding and repair additionally require the digest-pinned
+Docker proof. Encryption Tier 2 adds portable-crypto dependency pinning, migration tests,
+portable backup/tamper tests, and cross-profile DB re-protection tests to the required
+security surface.
 
 ## Remaining real-world blockers
 
@@ -154,29 +157,38 @@ The code milestone is not deployment proof. Remaining work requiring actual devi
 host administration:
 
 1. Pull the exact final green `main` commit onto the intended Windows 11 host.
-2. Run the full local suite, Protocol Black, and `windows_doctor.py` there.
-3. Verify BitLocker/full-disk encryption and recovery-key custody on the actual host and
-   intended backup media.
-4. Configure and validate the intended local model/runtime on that host.
-5. Validate Docker Desktop permissions and repeat the reviewed digest-pinned Docker proof.
-6. Create/verify a real encrypted `.sadbak` and perform a disposable restore drill under
-   the intended Windows account/profile.
-7. Run full human role/accessibility Alpha UAT.
-8. Configure private TLS and complete real iPhone/Android pairing/mobile UAT.
-9. Install/configure reviewed loopback STT/TTS providers and test real microphone/speaker
-   behavior if audio Voice will be claimed.
-10. Validate Windows firewall/account permissions, LAN/router/no-public-port-forwarding,
-    certificate-key custody, and physical host security.
-11. Configure GitHub branch protection/rulesets administratively so green CI is enforced,
+2. Install the exact pinned `requirements.txt` dependency set.
+3. Run the full local suite, Protocol Black, and `windows_doctor.py` there.
+4. Verify BitLocker/full-disk encryption and recovery-key custody on the actual host.
+5. Configure and validate the intended local model/runtime.
+6. Validate Docker Desktop permissions and repeat the digest-pinned Docker proof.
+7. Create/verify a real native encrypted `.sadbak` and perform a disposable restore drill.
+8. Create/verify a portable encrypted `.sadbak` and complete a cross-profile or replacement
+   Windows restore drill under `ENCRYPTION_TIER2_UAT.md`.
+9. Confirm restored runtime data is re-protected for the destination Windows user.
+10. Run full human role/accessibility Alpha UAT.
+11. Configure private TLS and complete real iPhone/Android pairing/mobile UAT.
+12. Install/configure reviewed loopback STT/TTS providers and test real microphone/speaker
+    behavior if audio Voice will be claimed.
+13. Validate Windows firewall/account permissions, LAN/router/no-public-port-forwarding,
+    certificate-key custody, portable-backup passphrase custody, and physical host security.
+14. Configure GitHub branch protection/rulesets administratively so green CI is enforced,
     not merely followed by convention.
-12. Continue later migration of remaining compatible JSON state into the protected data
-    layer only after backup/restore and encryption migration are accepted on the real host.
-13. Design a portable encrypted export/backup format with separately recoverable key
-    management before relying on DPAPI backups for cross-machine disaster recovery.
+
+## Explicit encryption boundaries
+
+- BitLocker remains the outer stolen-drive defense.
+- DPAPI does not protect against malware already running as the authorized Windows user.
+- Portable recovery is only as strong as its passphrase; SAD cannot recover a lost
+  passphrase.
+- SAD does not silently enable EFS.
+- `.env` remains live host configuration protected by Windows ACLs/BitLocker, though it is
+  encrypted inside backup containers.
+- SAD does not claim forensic secure deletion of historical SSD pages/remnants.
 
 ## Release language
 
-SAD may be described as a **Protocol-Black-hardened local-first Platform Alpha with
-Windows Encryption Tier 1** when the code gates are green. Do not call Windows deployment,
-BitLocker posture, cross-machine encrypted recovery, mobile operation, full audio Voice,
-or production readiness complete until their real host/device acceptance gates pass.
+When the code gates are green, SAD may be described as a **Protocol-Black-hardened
+local-first Platform Alpha with Encryption Tier 2 code complete**. Do not claim the real
+Windows host, BitLocker posture, cross-profile recovery, mobile operation, full audio
+Voice, or production readiness until their physical host/device UAT gates pass.
