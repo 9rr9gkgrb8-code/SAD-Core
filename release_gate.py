@@ -94,6 +94,7 @@ REQUIRED_PATHS = (
     "test_mobile_gateway.py",
     "test_mobile_pwa.py",
     "test_owner_repair_ui.py",
+    "test_platform_04_privacy.py",
     "test_platform_adolescence_api.py",
     "test_platform_api.py",
     "test_platform_clients.py",
