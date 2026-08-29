@@ -10,8 +10,8 @@ from dataclasses import asdict, dataclass
 from typing import Iterable
 
 
-PLATFORM_VERSION = "0.3-alpha"
-PLATFORM_SCHEMA_VERSION = 3
+PLATFORM_VERSION = "0.4-alpha"
+PLATFORM_SCHEMA_VERSION = 4
 CAPABILITY_LIFECYCLES = {"alpha", "stable", "deprecated"}
 
 
@@ -105,7 +105,7 @@ def _cap(
 BUILTIN_MODULES = (
     PlatformModule(
         "sad.platform", "SAD Platform Core",
-        "Discovers capabilities, negotiates versions, manages local app trust, and exposes metadata-only events.",
+        "Discovers capabilities, negotiates versions, manages local app trust, declarative external extension contracts, and metadata-only events.",
         "core",
         (
             _cap("platform:discover", "Discover platform", "Read the signed-in platform manifest.", None,
@@ -122,8 +122,14 @@ BUILTIN_MODULES = (
                   _route("POST", "/v1/platform/clients/{client_id}/revoke")), mutates=True, approval=True),
             _cap("platform:events", "Read platform events", "Read privacy-minimized platform event metadata.", "platform:manage",
                  (_route("POST", "/v1/platform/events/read"),)),
+            _cap("platform:extensions", "Manage extension contracts",
+                 "Register, inspect, and revoke declarative out-of-process extension manifests. Registration grants no execution authority or credentials.",
+                 "platform:manage",
+                 (_route("GET", "/v1/platform/extensions"), _route("POST", "/v1/platform/extensions"),
+                  _route("POST", "/v1/platform/extensions/{extension_id}/revoke")),
+                 mutates=True, approval=True),
         ),
-        module_version="3.0.0",
+        module_version="4.0.0",
     ),
     PlatformModule(
         "sad.chat", "SAD Chat",
@@ -214,6 +220,23 @@ BUILTIN_MODULES = (
                   _route("POST", "/v1/dev/workspaces/{workspace_id}/rollback"),
                   _route("POST", "/v1/jobs/{work_item_id}/close")), mutates=True, approval=True),
         ),
+    ),
+    PlatformModule(
+        "sad.skills", "Governed Skill Library",
+        "Evidence-bound reusable procedures promoted separately from successful repairs.",
+        "development",
+        (
+            _cap("skills:view", "Inspect skills", "Read candidate, validated, promoted, revoked, and superseded skills.", "development:view",
+                 (_route("GET", "/v1/skills"),)),
+            _cap("skills:propose", "Propose skill", "Create an evidence-bound skill candidate from repair/task provenance.", "development:work",
+                 (_route("POST", "/v1/skills"),), mutates=True),
+            _cap("skills:review", "Validate skill", "Attach independent verification evidence to a candidate skill.", "development:review",
+                 (_route("POST", "/v1/skills/{skill_id}/validate"),), mutates=True),
+            _cap("skills:govern", "Govern skill", "Human-promote or revoke a verified skill while preserving lineage.", "development:govern",
+                 (_route("POST", "/v1/skills/{skill_id}/promote"),
+                  _route("POST", "/v1/skills/{skill_id}/revoke")), mutates=True, approval=True),
+        ),
+        module_version="1.0.0",
     ),
     PlatformModule(
         "sad.accounts", "Accounts & Roles",
@@ -343,8 +366,13 @@ class PlatformRegistry:
                 "authorization": "role_permissions_and_client_scopes",
                 "platform_metadata_grants_authority": False,
                 "dynamic_extension_execution": False,
+                "extension_model": "declarative_external_sad_app_contract_only",
+                "extension_registration_grants_authority": False,
+                "host_fallback_on_extension_failure": False,
                 "tool_execution": "registered_internal_tools_only",
                 "memory_model": "explicit_user_controlled",
+                "skill_promotion": "independent_verification_plus_human_approval",
+                "repair_success_equals_skill_promotion": False,
                 "git_authority": "human_host_only",
             },
         }
