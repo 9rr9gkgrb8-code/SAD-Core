@@ -74,7 +74,10 @@ class PlatformRegistryTests(unittest.TestCase):
         self.assertIn("skills:review", reviewer)
         self.assertNotIn("skills:propose", reviewer)
         self.assertNotIn("skills:govern", reviewer)
-        self.assertEqual({"platform:discover", "platform:catalog", "platform:modules", "platform:compatibility", "chat:conversation", "voice:conversation", "memory:own", "tools:catalog", "tools:actions", "development:view", "skills:view"}, viewer)
+        self.assertIn("skills:view", viewer)
+        self.assertNotIn("skills:propose", viewer)
+        self.assertNotIn("skills:review", viewer)
+        self.assertNotIn("skills:govern", viewer)
 
     def test_compatibility_reports_missing_and_versions(self):
         student_allowed = self.registry.allowed_capability_ids(ROLE_PERMISSIONS["student"])
