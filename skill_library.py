@@ -106,7 +106,10 @@ def _validate_skill_record(record):
         _text(record["superseded_by"], "superseded_by", 128)
         if record["superseded_by"] == record["skill_id"]:
             raise ValueError("A skill cannot be superseded by itself.")
-    for key in ("reviewed_by", "approved_by", "verifier_identity", "verification_summary", "revocation_reason"):
+    for key in (
+        "reviewed_by", "approved_by", "revoked_by", "verifier_identity",
+        "verification_summary", "revocation_reason",
+    ):
         if record.get(key) is not None:
             _text(record[key], key, 2_000 if key in {"verification_summary", "revocation_reason"} else 128)
     for key in ("validated_at", "promoted_at", "revoked_at", "superseded_at"):
@@ -120,8 +123,11 @@ def _validate_skill_record(record):
         raise ValueError("Skill producer and verifier must be independent identities.")
     if record["state"] in {"promoted", "superseded"} and not record.get("approved_by"):
         raise ValueError("Promoted skills must retain the human approver identity.")
-    if record["state"] == "revoked" and not record.get("revocation_reason"):
-        raise ValueError("Revoked skills must retain a reason.")
+    if record["state"] == "revoked":
+        if not record.get("revocation_reason"):
+            raise ValueError("Revoked skills must retain a reason.")
+        if not record.get("revoked_by"):
+            raise ValueError("Revoked skills must retain the revoking actor identity.")
 
 
 def _validate_skill_data(data):
@@ -244,6 +250,7 @@ class SkillLibrary:
                 "proposed_by": proposed_by,
                 "reviewed_by": None,
                 "approved_by": None,
+                "revoked_by": None,
                 "created_at": timestamp,
                 "updated_at": timestamp,
                 "validated_at": None,
@@ -331,8 +338,8 @@ class SkillLibrary:
             timestamp = _now()
             record["state"] = "revoked"
             record["revoked_at"] = timestamp
+            record["revoked_by"] = revoked_by
             record["revocation_reason"] = reason
             record["updated_at"] = timestamp
-            record["approved_by"] = record.get("approved_by") or revoked_by
             self._save(data)
             return self._public(record)
