@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from dataclasses import asdict
+import uuid
 from pathlib import Path
 
 from auth import AuthService
@@ -48,25 +48,28 @@ class RedTeamForgeResultSpoofingTests(unittest.TestCase):
         self.assertEqual(item.state, "approved_for_isolated_work")
         return item
 
+    @staticmethod
+    def forged_result(request):
+        return {
+            "job_id": str(uuid.uuid4()),
+            "request_id": request["request_id"],
+            "correlation_id": request["correlation_id"],
+            "state": "succeeded",
+            "artifacts": [],
+            "diagnostics": ["fabricated success"],
+            "tests": [{"name": "fake", "passed": True}],
+            "error": None,
+        }
+
     def test_developer_can_submit_fake_forge_success_without_starting_forge(self):
         item = self._approved_isolated_item()
-        request = item.request
 
         # No /start and no /execute occurred. Attacker directly asserts a Forge success.
         status, updated = self.service.dispatch(
             "POST",
             f"/v1/jobs/{item.work_item_id}/result",
             self.bearer(self.developer),
-            {
-                "job_id": "attacker-job",
-                "request_id": request["request_id"],
-                "correlation_id": request["correlation_id"],
-                "state": "succeeded",
-                "artifacts": [],
-                "diagnostics": ["fabricated success"],
-                "tests": [{"name": "fake", "passed": True}],
-                "error": None,
-            },
+            self.forged_result(item.request),
         )
         self.assertEqual(status, 200)
         self.assertEqual(updated["state"], "awaiting_human_decision")
@@ -75,21 +78,11 @@ class RedTeamForgeResultSpoofingTests(unittest.TestCase):
 
     def test_reviewer_can_create_false_approved_state_from_spoofed_result(self):
         item = self._approved_isolated_item()
-        request = item.request
         _, updated = self.service.dispatch(
             "POST",
             f"/v1/jobs/{item.work_item_id}/result",
             self.bearer(self.developer),
-            {
-                "job_id": "attacker-job",
-                "request_id": request["request_id"],
-                "correlation_id": request["correlation_id"],
-                "state": "succeeded",
-                "artifacts": [],
-                "diagnostics": ["fabricated success"],
-                "tests": [{"name": "fake", "passed": True}],
-                "error": None,
-            },
+            self.forged_result(item.request),
         )
         self.assertEqual(updated["state"], "awaiting_human_decision")
 
