@@ -98,7 +98,19 @@ class SkillLibraryTests(unittest.TestCase):
             candidate["skill_id"], revoked_by="owner-account", reason="New evidence invalidated the procedure."
         )
         self.assertEqual(revoked["state"], "revoked")
+        self.assertEqual(revoked["revoked_by"], "owner-account")
+        self.assertEqual(revoked["approved_by"], "owner-account")
         self.assertIn("invalidated", revoked["revocation_reason"])
+
+    def test_validated_never_promoted_skill_revocation_does_not_forge_approval(self):
+        candidate = self.propose()
+        self.validate(candidate["skill_id"])
+        revoked = self.skills.revoke(
+            candidate["skill_id"], revoked_by="owner-account", reason="Validation evidence was superseded."
+        )
+        self.assertEqual(revoked["state"], "revoked")
+        self.assertEqual(revoked["revoked_by"], "owner-account")
+        self.assertIsNone(revoked["approved_by"])
 
     def test_candidate_requires_source_and_execution_provenance(self):
         with self.assertRaises(ValueError):
