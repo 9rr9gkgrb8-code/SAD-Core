@@ -16,6 +16,7 @@ EXPLOIT_MODULES = (
     "test_redteam_failure_poisoning",
     "test_redteam_forge_student_integrity",
     "test_redteam_account_lockout_dos",
+    "test_redteam_governance_self_edit",
 )
 
 
