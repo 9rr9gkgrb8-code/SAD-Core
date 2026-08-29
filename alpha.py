@@ -1,9 +1,10 @@
-"""Friendly local launcher for the SAD + Forge Alpha 1 browser application."""
+"""Friendly local launcher for the SAD + Forge Platform Alpha browser application."""
 
 from getpass import getpass
 
 from api import create_server
 from auth import AuthService
+from platform_v04_service import SadPlatform04Service
 
 
 def ensure_owner(auth):
@@ -42,8 +43,9 @@ def main():
     auth = AuthService()
     if ensure_owner(auth) is False:
         return
-    server = create_server(service=None)
-    print(f"SAD + Forge Alpha 1 is ready at http://127.0.0.1:{server.server_port}/")
+    service = SadPlatform04Service(auth=auth)
+    server = create_server(service=service)
+    print(f"SAD + Forge Platform Alpha 0.4 is ready at http://127.0.0.1:{server.server_port}/")
     print("Keep this window open while using the application. Press Ctrl+C to stop.")
     try:
         server.serve_forever()
