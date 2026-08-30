@@ -1,17 +1,79 @@
 # SAD — Sandbox Adaptive Dialogue
 
-SAD is a local-first AI platform with human-controlled authority boundaries.
+**A local-first AI platform that keeps memory, tools, coding, repair, and agent authority under explicit human control.**
 
-Current Alpha surfaces include SAD Chat, Voice, explicit Personal Memory, governed Tool
-Actions, Personal Study, Forge Learning, multi-file Developer Workspace coding,
-controlled repair, accounts/RBAC, paired Mobile access, scoped local app credentials,
-platform events, capability/version discovery, transactional protected persistence,
-Windows Encryption Tier 2, and verified native plus portable encrypted recovery.
+SAD is built for people who want useful AI automation **without handing the model unrestricted authority over the machine, credentials, memory, or codebase**.
 
-The frozen repository-backed SAD and Forge scope is **Alpha Stable**. The fail-closed
-`alpha_stable.py` gate reports both product surfaces separately and requires 100% of the
-declared contract in `ALPHA_STABLE.md`. Physical-device and human deployment acceptance
-remain separate and are never inferred from this code gate.
+> **Alpha Stable:** the repository-backed SAD + Forge contract is frozen and verified by fail-closed release gates. Physical-device and deployment acceptance remain separate and are never inferred from code tests alone.
+
+## Why SAD exists
+
+Most agent systems optimize for giving the model more tools. SAD optimizes for giving the model **only the authority the human explicitly granted**.
+
+SAD combines:
+
+- **Local-first operation** with loopback model support and visible fallbacks.
+- **Explicit personal memory** instead of silently turning conversations into permanent memory.
+- **Governed tool actions** where state-changing actions require approval tied to the exact argument hash.
+- **Isolated coding and repair** with scoped workspaces, Docker verification, exact diffs, and Owner apply/rollback.
+- **Forge Learning** for structured study and game-oriented learning workflows.
+- **Account and RBAC boundaries** across Chat, Memory, Tools, Study, Forge, coding, repair, mobile, and platform integrations.
+- **Protected local persistence and recovery** with Windows DPAPI and encrypted portable backup support.
+
+The goal is not an autonomous AI with broad machine control. The goal is a **human-governed AI platform that can become more capable without quietly becoming more powerful than its operator intended**.
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    U[Human / Owner] -->|explicit authority| C[SAD Core]
+    C --> CHAT[Chat + Voice]
+    C --> MEM[Personal Memory]
+    C --> TOOLS[Governed Tools]
+    C --> STUDY[Personal Study]
+    C --> FORGE[Forge Learning]
+    C --> DEV[Developer Workspace]
+    C --> REPAIR[Controlled Repair]
+    C --> MOBILE[Paired Mobile]
+    C --> DATA[Protected Local Persistence]
+
+    TOOLS -->|mutating action| APPROVE[Exact-args approval]
+    DEV --> SANDBOX[Isolated workspace + Docker tests]
+    REPAIR --> SANDBOX
+    SANDBOX -->|exact diff| APPROVE
+    APPROVE -->|Owner YES / NO| C
+```
+
+## 60-second orientation
+
+If you are evaluating SAD, start here:
+
+1. Read this README for the platform boundaries.
+2. Review `ALPHA_STABLE.md` for the frozen Alpha contract.
+3. Run `python alpha_stable.py` to verify the declared Alpha surface.
+4. Run `python protocol_black.py` to exercise the fail-closed security gate.
+5. On the real Windows deployment host, run `python windows_doctor.py` before starting SAD.
+
+Windows launch:
+
+```powershell
+python -m pip install -r requirements.txt
+python windows_doctor.py
+.\start_sad_windows.ps1
+```
+
+## What makes SAD different
+
+| Area | SAD approach |
+| --- | --- |
+| Memory | Explicit user-controlled durable memory; ordinary chat is not silently promoted to long-term memory |
+| Tools | Reviewed catalog; state-changing actions require approval bound to exact arguments |
+| Coding | Human-approved scope → isolated workspace → local AI edits → Docker tests → exact diff → Owner decision |
+| Repair | Failure-driven draft → isolated test → exact diff → Owner approval/rollback |
+| Credentials | Scoped local-app credentials; machine clients do not inherit user authority |
+| Git | Coding/repair agents receive no commit, push, fetch, rebase, merge, or credential authority |
+| Network | Core remains loopback-oriented; mobile access uses a separate paired TLS gateway |
+| Release claims | Code gates prove the declared contract only; hardware and human UAT stay separate |
 
 ## Platform Core v0.3-alpha
 
@@ -189,3 +251,9 @@ Windows ACLs/BitLocker, although backup containers encrypt it while archived.
 Treat `local_data/`, `.sad_sandbox/`, `.sad_dev/`, `.env`, migration archives,
 credentials, the SQLite runtime database, and every backup artifact as private host data.
 Never commit them, even when application encryption is active.
+
+## Project status
+
+SAD Core is **Alpha Stable**, not production-complete. The repository contract is gated and testable, but real-world deployment still requires the documented Windows, Docker, model, TLS, phone, audio, and recovery acceptance checks.
+
+If this architecture is useful to you, **star the repository** so you can find it again and so other developers interested in local-first, human-governed AI can discover the project.
