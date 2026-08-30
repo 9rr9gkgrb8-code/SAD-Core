@@ -1,0 +1,21 @@
+[Unit]
+Description=SAD + Forge hosted core
+After=network.target
+
+[Service]
+Type=simple
+User=sad
+Group=sad
+WorkingDirectory=/opt/sad-core
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/sad-core/.venv/bin/python /opt/sad-core/cloud.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sad-core/runtime
+
+[Install]
+WantedBy=multi-user.target
