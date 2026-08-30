@@ -62,6 +62,14 @@ password/session token, app credential, tool approval, filesystem access, Docker
 or Git authority from `voice_runtime.py`.
 
 The browser Permissions Policy still disables direct microphone access. Enabling browser
-microphone capture requires a separate reviewed client/UAT milestone. The code in this
-milestone proves the audio transport/orchestration contract, not the physical microphone
-or speaker on a particular computer/phone.
+microphone capture requires a separate reviewed client/UAT milestone tracked in
+`BROWSER_VOICE_INPUT.md`. The code in this milestone proves the audio transport/orchestration
+contract, not the physical microphone or speaker on a particular computer/phone.
+
+## Reply audio for the browser (Beta)
+
+`GET /v1/voice/status` reports STT/TTS readiness and whether browser microphone input is
+enabled. `POST /v1/voice/speak` with `{ "text": "..." }` returns `audio/wav` synthesized by
+the same loopback TTS service, so the SAD Chat avatar can speak replies. When the TTS
+service is not configured the avatar falls back to the browser's built-in speech synthesis.
+Neither path adds microphone, account, tool, coding, repair, or Git authority.

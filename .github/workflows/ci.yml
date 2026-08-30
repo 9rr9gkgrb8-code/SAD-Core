@@ -39,6 +39,7 @@ jobs:
       - name: Browser syntax
         run: |
           node --check web/app.js
+          node --check web/avatar.js
           node --check web/chat.js
           node --check web/developer_workspace.js
           node --check web/memory_tools.js
