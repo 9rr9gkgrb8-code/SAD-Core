@@ -9,6 +9,7 @@ import re
 
 from auth import AuthService, ROLE_PERMISSIONS
 from bounded_http import BoundedThreadingHTTPServer
+from browser_voice import browser_microphone_enabled, browser_permissions_policy
 from conversation import ConversationStore, generate_chat_reply
 from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
@@ -25,6 +26,7 @@ from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from study_generator import generate_study_result
 from tool_actions import ToolActionStore
+from voice_runtime import VoiceRuntime
 
 
 API_VERSION = "v1"
@@ -32,11 +34,22 @@ MAX_REQUEST_BYTES = 2_000_000
 LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
 
 
+class RawResponse:
+    """Non-JSON dispatch result: an explicit content type and already-encoded bytes."""
+
+    __slots__ = ("content_type", "body")
+
+    def __init__(self, content_type, body):
+        self.content_type = content_type
+        self.body = bytes(body)
+
+
 class SadApiService:
     def __init__(
         self, auth=None, dashboard=None, progress=None, mobile_access=None,
         conversations=None, developer_workspaces=None, platform=None,
         platform_clients=None, platform_events=None, memory=None, tool_actions=None,
+        voice=None,
     ):
         self.auth = auth or AuthService()
         self.dashboard = dashboard or FailureDashboard(self.auth, DASHBOARD_STATE_FILE)
@@ -49,6 +62,7 @@ class SadApiService:
         self.platform_clients = platform_clients or PlatformClientStore()
         self.platform_events = platform_events or PlatformEventStore()
         self.tool_actions = tool_actions or ToolActionStore(memory=self.memory, platform=self.platform)
+        self.voice = voice or VoiceRuntime()
         self.last_event_error = None
 
     def token(self, headers):
@@ -279,6 +293,20 @@ class SadApiService:
                 "input_mode": "transcript", "output_mode": "text_for_local_tts",
             }
 
+        if method == "GET" and path == "/v1/voice/status":
+            status = self.voice.status()
+            status["browser_microphone"] = browser_microphone_enabled()
+            return 200, status
+        if method == "POST" and path == "/v1/voice/speak":
+            text = body.get("text", "")
+            if not isinstance(text, str) or not text.strip() or len(text) > 20_000:
+                raise ValueError("Speech text must be 1-20000 characters.")
+            if not self.voice.tts_configured():
+                raise KeyError("Local TTS service is not configured.")
+            audio = self.voice.synthesize_wav(text.strip())
+            self._publish("voice.speak.completed", details={"chars": len(text.strip())})
+            return 200, RawResponse("audio/wav", audio)
+
         if method == "POST" and path == "/v1/dev/workspaces/scope":
             self.auth.require(token, "development:work")
             return 200, suggest_scope(body.get("task", ""))
@@ -446,6 +474,17 @@ class SadApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _respond_raw(self, status, response):
+        self.send_response(status)
+        self.send_header("Content-Type", response.content_type)
+        self.send_header("Content-Length", str(len(response.body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.end_headers()
+        self.wfile.write(response.body)
+
     def _handle(self):
         try:
             if self.command == "GET" and (self.path in {"/", "/manifest.webmanifest", "/sw.js"} or self.path.startswith("/ui/")):
@@ -458,6 +497,8 @@ class SadApiHandler(BaseHTTPRequestHandler):
                 return self._respond(413, {"error": "request_too_large"})
             body = json.loads(self.rfile.read(length) or b"{}")
             status, payload = self.service.dispatch(self.command, self.path, self.headers, body)
+            if isinstance(payload, RawResponse):
+                return self._respond_raw(status, payload)
             self._respond(status, payload)
         except PermissionError as error:
             self._respond(403, {"error": str(error)})
@@ -485,7 +526,7 @@ class SadApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; frame-ancestors 'none'")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
-        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header("Permissions-Policy", browser_permissions_policy())
         if target.name == "sw.js":
             self.send_header("Service-Worker-Allowed", "/")
         self.end_headers()

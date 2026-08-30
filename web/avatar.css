@@ -1,0 +1,27 @@
+.sasha-stage{--sasha-accent:var(--mint);display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:#0a1512}
+.sasha-stage.stage-1{--sasha-accent:#7ddccf}
+.sasha-stage.stage-2{--sasha-accent:#8ad0f0}
+.sasha-stage.stage-3{--sasha-accent:#c7b3f5}
+.sasha-stage.stage-4{--sasha-accent:var(--gold)}
+.sasha-face{width:64px;height:64px;flex:none;border-radius:50%;border:1px solid var(--line);background:radial-gradient(circle at 36% 30%,#6ee7b733 0,#163329 42%,#0a1512 78%)}
+.sasha-stage.stage-4 .sasha-face{border-color:var(--sasha-accent)}
+.sasha-copy{display:grid;gap:2px;min-width:0}
+.sasha-copy strong{font-size:.95rem}
+.sasha-status{font-size:.78rem;color:var(--muted)}
+.sasha-mute{margin-left:auto;flex:none;width:auto;min-height:36px;padding:7px 12px;background:transparent;color:var(--ink);font-weight:700}
+.sasha-mute[aria-pressed="true"]{border-color:var(--gold);color:var(--gold)}
+.sasha-eye{fill:var(--ink)}
+.sasha-mouth{fill:var(--sasha-accent)}
+.sasha-ring{fill:none;stroke:var(--sasha-accent);stroke-width:2;opacity:0;transform-box:fill-box;transform-origin:center}
+.sasha-stage.is-thinking .sasha-ring{stroke-dasharray:18 999}
+.sasha-stage.is-idle .sasha-face{animation:sasha-bob 4.5s ease-in-out infinite}
+.sasha-stage.is-listening .sasha-ring{opacity:.5;animation:sasha-pulse 1.8s ease-out infinite}
+.sasha-stage.is-thinking .sasha-ring{opacity:.7;animation:sasha-spin 1.1s linear infinite}
+.sasha-stage.is-thinking .sasha-status::after{content:"";animation:sasha-dots 1.4s steps(4,end) infinite}
+.sasha-stage.is-speaking .sasha-face{animation:sasha-bob 1.6s ease-in-out infinite}
+@keyframes sasha-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes sasha-pulse{0%{opacity:.55;transform:scale(.82)}100%{opacity:0;transform:scale(1.15)}}
+@keyframes sasha-spin{to{transform:rotate(360deg)}}
+@keyframes sasha-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+@media(max-width:760px){.sasha-stage{padding:10px 12px;gap:10px}.sasha-face{width:52px;height:52px}}
+@media(prefers-reduced-motion:reduce){.sasha-stage *{animation:none!important}.sasha-stage.is-listening .sasha-ring,.sasha-stage.is-thinking .sasha-ring{opacity:.45}}

@@ -7,6 +7,7 @@
   const byId=id=>document.getElementById(id);
   const SURFACE_ASSETS={
     chat:{css:"/ui/chat.css",js:"/ui/chat.js"},
+    avatar:{css:"/ui/avatar.css",js:"/ui/avatar.js"},
     developer_workspace:{css:"/ui/developer_workspace.css",js:"/ui/developer_workspace.js"},
     platform:{css:"/ui/platform.css",js:"/ui/platform.js"},
     memory_tools:{css:"/ui/memory_tools.css",js:"/ui/memory_tools.js"},
@@ -94,6 +95,7 @@
     }
   }
   loadSurface("chat");
+  loadSurface("avatar");
   loadSurface("developer_workspace");
   loadSurface("platform");
   loadSurface("memory_tools");
