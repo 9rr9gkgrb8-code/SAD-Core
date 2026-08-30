@@ -1,7 +1,8 @@
-"""Career-oriented Forge paths for high-school AI, cyber, and technology learners.
+"""Flexible Forge career paths for AI, cybersecurity, and technology learners.
 
-The module intentionally models safe learning exercises and interview-style challenges.
-Cyber exercises must use synthetic/local data and authorized sandbox targets only.
+Progress is based on demonstrated skill levels, not school grade. Learners can branch into a
+specialty, backtrack, switch specialties, and retain earned mastery. Cyber exercises must use
+synthetic/local data and authorized sandbox targets only.
 """
 
 from dataclasses import dataclass
@@ -16,6 +17,14 @@ class CareerTrack:
     challenge_types: tuple[str, ...]
     safety_boundary: str = "synthetic_or_authorized_sandbox_only"
 
+
+LEVELS = {
+    1: "Explorer",
+    2: "Foundation",
+    3: "Practitioner",
+    4: "Specialist",
+    5: "Career Ready",
+}
 
 CYBER_TRACKS = {
     "security_foundations": CareerTrack("security_foundations", "Security Foundations", "cybersecurity", "Security principles, identity, risk, hardening, and safe computing.", ("scenario", "log_review", "configuration_review")),
@@ -44,14 +53,15 @@ TECH_TRACKS = {
 
 CAREER_TRACKS = {**CYBER_TRACKS, **AI_TRACKS, **TECH_TRACKS}
 
+PATH_ROOTS = {
+    "cybersecurity": tuple(CYBER_TRACKS),
+    "artificial_intelligence": tuple(AI_TRACKS),
+    "technology": tuple(TECH_TRACKS),
+}
+
 INTERVIEW_CHALLENGE_TYPES = (
-    "leetcode_style",       # original algorithm/data-structure problems, not copied proprietary prompts
-    "debugging",            # diagnose broken code/logs
-    "code_review",          # identify correctness/security/performance problems
-    "system_design",        # explain architecture and tradeoffs
-    "security_scenario",    # defensive, synthetic incident/risk scenario
-    "technical_explanation",# explain reasoning aloud/in writing
-    "behavioral_star",      # STAR-style job interview response
+    "leetcode_style", "debugging", "code_review", "system_design", "security_scenario",
+    "technical_explanation", "behavioral_star",
 )
 
 
@@ -63,33 +73,80 @@ def get_career_track(track_id):
 
 
 def career_labels():
-    """Return stable labels for UI menus and progress dashboards."""
     return {key: track.label for key, track in CAREER_TRACKS.items()}
 
 
-def interview_mix(track_id, grade):
-    """Return an age-appropriate interview-practice mix for grades 9-12."""
-    if grade not in (9, 10, 11, 12):
-        raise ValueError("Career interview practice is limited to grades 9-12.")
+def specialties(family):
+    """Return every specialty available from a path root."""
+    try:
+        return tuple(get_career_track(track_id) for track_id in PATH_ROOTS[family])
+    except KeyError as exc:
+        raise ValueError("Unknown Forge career path family.") from exc
+
+
+def level_label(level):
+    try:
+        return LEVELS[level]
+    except KeyError as exc:
+        raise ValueError("Forge career level must be 1-5.") from exc
+
+
+def switch_path(progress, new_track_id):
+    """Switch specialties without deleting prior mastery or completed work.
+
+    progress is a mutable mapping so UI/session layers can persist the navigation history.
+    """
+    get_career_track(new_track_id)
+    previous = progress.get("active_track")
+    progress.setdefault("path_history", [])
+    if previous and previous != new_track_id:
+        progress["path_history"].append(previous)
+    progress["active_track"] = new_track_id
+    progress.setdefault("track_mastery", {})
+    return progress
+
+
+def backtrack_path(progress):
+    """Return to the most recent specialty while preserving all mastery."""
+    history = progress.setdefault("path_history", [])
+    if not history:
+        return progress
+    current = progress.get("active_track")
+    previous = history.pop()
+    if current and current != previous:
+        progress.setdefault("visited_tracks", [])
+        if current not in progress["visited_tracks"]:
+            progress["visited_tracks"].append(current)
+    progress["active_track"] = previous
+    return progress
+
+
+def interview_mix(track_id, level):
+    """Return interview practice based on demonstrated skill level, never school grade."""
+    level_label(level)
     track = get_career_track(track_id)
-    base = ["technical_explanation", "debugging"]
-    if track.family in {"technology", "artificial_intelligence"}:
-        base.extend(["leetcode_style", "code_review"])
-    if track.family == "cybersecurity" or track.track_id == "ai_safety_security":
-        base.extend(["security_scenario", "code_review"])
-    if grade >= 11:
+    base = ["technical_explanation"]
+    if level >= 2:
+        base.append("debugging")
+    if track.family in {"technology", "artificial_intelligence"} and level >= 2:
+        base.append("leetcode_style")
+    if (track.family == "cybersecurity" or track.track_id == "ai_safety_security") and level >= 2:
+        base.append("security_scenario")
+    if level >= 3:
+        base.append("code_review")
+    if level >= 4:
         base.append("system_design")
-    if grade >= 12:
+    if level >= 5:
         base.append("behavioral_star")
     return tuple(dict.fromkeys(base))
 
 
 def challenge_rules():
-    """Rules used by challenge generators and evaluators."""
     return {
         "leetcode_style": "Generate original interview-style algorithm problems; never copy proprietary question text.",
         "company_style": "Model the skill category and interview format, not confidential or proprietary company questions.",
         "cyber": "Use synthetic data, local labs, CTF-style puzzles, or explicitly authorized sandbox targets only.",
         "grading": "Score reasoning, tests, edge cases, debugging, communication, and solution quality, not answer memorization.",
         "ai_assistance": "Include both no-assistance fundamentals and AI-augmented review/debug/design challenges.",
+        "path_freedom": "Learners may change specialties or backtrack at any time without losing earned mastery.",
     }
