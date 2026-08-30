@@ -7,8 +7,8 @@ Windows, phone, microphone/speaker, network, accessibility, or recovery UAT has 
 from __future__ import annotations
 
 from pathlib import Path
-import subprocess
-import sys
+
+from alpha_stable import run_stability_gate
 
 ROOT = Path(__file__).resolve().parent
 
@@ -49,14 +49,10 @@ def main() -> int:
     if missing_markers:
         return fail("BETA.md is incomplete: " + ", ".join(missing_markers))
 
-    # Alpha Stable remains a hard dependency for Beta. Run its fail-closed gate rather
-    # than duplicating the frozen Alpha contract here.
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "alpha_stable.py")],
-        cwd=ROOT,
-        check=False,
-    )
-    if result.returncode != 0:
+    # Alpha Stable remains a hard dependency for Beta. Call the existing in-process
+    # fail-closed gate rather than introducing a new subprocess-capable module.
+    problems, _ = run_stability_gate(root=ROOT)
+    if problems:
         return fail("Alpha Stable prerequisite failed")
 
     print("BETA GATE: REPOSITORY CONTRACT READY")
