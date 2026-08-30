@@ -1,14 +1,13 @@
-"""Grade-aware Forge curriculum scaffolding for high-school learners.
+"""Academic Forge curriculum scaffolding for secondary-school coursework.
 
-This module keeps the game-first Forge surface while adding grade-specific rigor,
-subject tracks, method-first guidance, and explicit verification expectations.
-It does not award XP, alter RBAC, or bypass the existing quest/mastery gates.
+School grade can describe the student's actual academic assignment, but it never controls
+Forge career progression. AI/cyber/tech careers use independent skill levels and freely
+switchable specialties in forge_career_paths.py.
 """
 
 from dataclasses import asdict, dataclass
 
 from forge_student import homework_to_quest
-
 
 SUPPORTED_GRADES = (9, 10, 11, 12)
 
@@ -47,12 +46,8 @@ RIGOR_BY_GRADE = {
 }
 
 HINT_POLICY = (
-    "diagnostic_question",
-    "concept_nudge",
-    "method_hint",
-    "worked_analogy",
-    "worked_example",
-    "full_explanation",
+    "diagnostic_question", "concept_nudge", "method_hint", "worked_analogy",
+    "worked_example", "full_explanation",
 )
 
 
@@ -74,19 +69,14 @@ class HighSchoolPlan:
 
 def _normalize_subject(subject):
     value = str(subject or "").strip().lower()
-    aliases = {
-        "ela": "english",
-        "language arts": "english",
-        "social studies": "history",
-        "maths": "math",
-    }
+    aliases = {"ela": "english", "language arts": "english", "social studies": "history", "maths": "math"}
     return aliases.get(value, value)
 
 
 def build_high_school_plan(grade, subject, learning_objective=""):
-    """Return a bounded grade-aware tutoring plan for grades 9-12."""
+    """Build academic-course support only; this does not gate career paths."""
     if isinstance(grade, bool) or not isinstance(grade, int) or grade not in SUPPORTED_GRADES:
-        raise ValueError("Forge high-school mode supports grades 9-12 only.")
+        raise ValueError("Academic high-school support uses grades 9-12.")
     normalized = _normalize_subject(subject)
     if normalized not in SUBJECT_TRACKS:
         raise ValueError("Supported high-school subjects are math, science, english, and history.")
@@ -94,7 +84,7 @@ def build_high_school_plan(grade, subject, learning_objective=""):
     if len(objective) > 10_000:
         raise ValueError("Learning objective is too large.")
     if not objective:
-        objective = f"Build grade {grade} mastery in {SUBJECT_TRACKS[normalized][grade][0]}"
+        objective = f"Build mastery in {SUBJECT_TRACKS[normalized][grade][0]}"
     return HighSchoolPlan(
         grade=grade,
         subject=normalized,
@@ -104,20 +94,17 @@ def build_high_school_plan(grade, subject, learning_objective=""):
         tutoring_mode="method_first_then_mastery",
         verification_required=normalized in {"math", "science", "history"},
         hint_policy=HINT_POLICY,
-        mastery_check=(
-            "Solve or explain a fresh transfer problem without copying the worked example, "
-            "then justify the method or evidence used."
-        ),
+        mastery_check="Solve or explain a fresh transfer problem, then justify the method or evidence used.",
     )
 
 
 def high_school_homework_to_quest(grade, subject, assignment, learning_objective=""):
-    """Create an existing Forge quest plus grade-aware curriculum metadata."""
     plan = build_high_school_plan(grade, subject, learning_objective)
     quest = homework_to_quest(plan.subject, assignment, plan.learning_objective)
     return {
         "quest": asdict(quest),
         "curriculum": plan.to_dict(),
+        "career_progression": "independent_skill_levels_with_free_path_switching",
         "teaching_contract": {
             "do_not_replace_student_thinking": True,
             "teach_method_before_final_answer": True,
