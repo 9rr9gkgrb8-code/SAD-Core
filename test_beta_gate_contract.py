@@ -13,10 +13,9 @@ class BetaGateContractTests(unittest.TestCase):
                 self.assertEqual(beta_gate.main(), 1)
 
     def test_alpha_failure_blocks_beta_when_repository_evidence_exists(self):
-        with mock.patch("beta_gate.subprocess.run") as run:
-            run.return_value.returncode = 1
+        with mock.patch("beta_gate.run_stability_gate", return_value=(["blocked"], {})) as gate:
             self.assertEqual(beta_gate.main(), 1)
-            run.assert_called_once()
+            gate.assert_called_once_with(root=beta_gate.ROOT)
 
 
 if __name__ == "__main__":
