@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import threading
 import uuid
 
@@ -26,6 +27,9 @@ MAX_MEMORIES_PER_ACCOUNT = 500
 MAX_MEMORY_CONTENT = 8_000
 MAX_MEMORY_TITLE = 120
 CATEGORIES = {"fact", "preference", "goal", "project", "note"}
+CONTEXT_LEVELS = {"abstract", "overview", "full"}
+DEFAULT_CONTEXT_BUDGET = 4_000
+OVERVIEW_CHARS = 240
 
 
 def _now():
@@ -59,6 +63,19 @@ def _validate_memory_data(data):
     if not isinstance(data, dict) or data.get("schema_version") != 1 or not isinstance(data.get("memories"), dict):
         raise ValueError("Unsupported or invalid memory store.")
     return data
+
+
+def _tokens(value):
+    if not isinstance(value, str):
+        return set()
+    return set(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _clip(value, maximum):
+    value = value.strip()
+    if len(value) <= maximum:
+        return value
+    return value[: max(1, maximum - 1)].rstrip() + "…"
 
 
 class MemoryStore:
@@ -226,3 +243,83 @@ class MemoryStore:
     def context(self, account_id, limit=20):
         items = self.search(account_id, "", limit=limit, enabled_only=True)
         return [f"[{item['category']}] {item['title']}: {item['content']}" for item in items]
+
+    def context_plan(self, account_id, query="", *, limit=20, budget_chars=DEFAULT_CONTEXT_BUDGET):
+        """Build a bounded, observable context ladder without changing saved memory.
+
+        Every selected memory starts at the abstract level. Relevant memories may be
+        promoted to overview or full detail while the character budget permits. The
+        returned trace explains each selection so callers can inspect why context was
+        injected instead of treating retrieval as a hidden side effect.
+        """
+        if not isinstance(query, str) or len(query) > 500:
+            raise ValueError("Memory context query must be text up to 500 characters.")
+        if not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("Memory context limit must be between 1 and 100.")
+        if not isinstance(budget_chars, int) or not 200 <= budget_chars <= 50_000:
+            raise ValueError("Memory context budget must be between 200 and 50000 characters.")
+
+        items = self.search(account_id, "", limit=100, enabled_only=True)
+        query_tokens = _tokens(query)
+        ranked = []
+        for position, item in enumerate(items):
+            title_tokens = _tokens(item.get("title", ""))
+            content_tokens = _tokens(item.get("content", ""))
+            title_hits = len(query_tokens & title_tokens)
+            content_hits = len(query_tokens & content_tokens)
+            score = (title_hits * 3) + content_hits
+            ranked.append((score, -position, item, title_hits, content_hits))
+        ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+
+        selected = []
+        trace = []
+        used = 0
+        for score, _, item, title_hits, content_hits in ranked[:limit]:
+            abstract = f"[{item['category']}] {item['title']}"
+            overview = f"{abstract}: {_clip(item['content'], OVERVIEW_CHARS)}"
+            full = f"{abstract}: {item['content']}"
+
+            if query_tokens and score >= 4:
+                desired_level, candidate = "full", full
+                reason = f"strong relevance: {title_hits} title token hits, {content_hits} content token hits"
+            elif query_tokens and score > 0:
+                desired_level, candidate = "overview", overview
+                reason = f"partial relevance: {title_hits} title token hits, {content_hits} content token hits"
+            else:
+                desired_level, candidate = "abstract", abstract
+                reason = "recency fallback; no query token match" if query_tokens else "recent active memory"
+
+            remaining = budget_chars - used
+            if len(candidate) > remaining and desired_level == "full":
+                desired_level, candidate = "overview", overview
+                reason += "; downgraded to overview by context budget"
+            if len(candidate) > remaining and desired_level == "overview":
+                desired_level, candidate = "abstract", abstract
+                reason += "; downgraded to abstract by context budget"
+            if len(candidate) > remaining:
+                trace.append({
+                    "memory_id": item["memory_id"],
+                    "selected": False,
+                    "level": None,
+                    "score": score,
+                    "reason": "skipped because context budget was exhausted",
+                })
+                continue
+
+            selected.append(candidate)
+            used += len(candidate)
+            trace.append({
+                "memory_id": item["memory_id"],
+                "selected": True,
+                "level": desired_level,
+                "score": score,
+                "reason": reason,
+            })
+
+        return {
+            "query": query,
+            "budget_chars": budget_chars,
+            "used_chars": used,
+            "context": selected,
+            "trace": trace,
+        }
