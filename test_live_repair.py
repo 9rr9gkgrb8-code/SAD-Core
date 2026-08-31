@@ -6,6 +6,7 @@ from pathlib import Path
 
 import live_apply
 import sandbox
+import forge_worker
 from auth import AuthService
 from failure_dashboard import FailureDashboard, FailureEvent
 from repair_planner import RepairPlanningError, plan_repair
@@ -66,6 +67,7 @@ class LiveRepairTests(unittest.TestCase):
         proposal, path = sandbox.create_sandbox_proposal("failure-1", "app.py", "Set VALUE to 2")
         proposal, diff = sandbox.create_draft_patch(path, "app.py", "VALUE = 1", "VALUE = 2")
         proposal["status"] = "sandbox_tests_passed"
+        proposal["tested_target_sha256"] = sandbox._hash_file(path / "app.py")
         (path / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
         return proposal, path, diff
 
@@ -91,6 +93,18 @@ class LiveRepairTests(unittest.TestCase):
             live_apply.apply_approved_proposal(proposal["proposal_id"])
         self.assertEqual((self.project / "app.py").read_text(encoding="utf-8"), "VALUE = 99\n")
 
+    def test_tampering_after_test_or_approval_is_refused(self):
+        proposal, path, _ = self.passing_proposal()
+        (path / "app.py").write_text("MALICIOUS = True\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            sandbox.approve_sandbox_proposal(proposal["proposal_id"])
+
+        proposal2, path2, _ = self.passing_proposal()
+        sandbox.approve_sandbox_proposal(proposal2["proposal_id"])
+        (path2 / "app.py").write_text("MALICIOUS = True\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            live_apply.apply_approved_proposal(proposal2["proposal_id"])
+
     def test_owner_decision_applies_but_reviewer_decision_does_not(self):
         proposal, _, diff = self.passing_proposal()
         auth = AuthService(self.root / "accounts.json")
@@ -107,15 +121,22 @@ class LiveRepairTests(unittest.TestCase):
         item = dashboard.approve_isolated_work(item.work_item_id, owner, "source")
         dashboard.start_forge(item.work_item_id, developer)
         request = item.request
+        job_id = request["forge_job_id"]
+        tested_hash = proposal["tested_target_sha256"]
         result = ForgeResult(
-            str(uuid.uuid4()), request["request_id"], request["correlation_id"], "succeeded",
+            job_id, request["request_id"], request["correlation_id"], "succeeded",
             (
                 Artifact("diff", {"target_file": "app.py", "patch": diff}),
-                Artifact("execution_receipt", {"proposal_id": proposal["proposal_id"]}),
+                Artifact("execution_receipt", {"proposal_id": proposal["proposal_id"], "tested_target_sha256": tested_hash, "worker_attestation": forge_worker._attestation(job_id, request["request_id"], request["correlation_id"], proposal["proposal_id"], tested_hash, "succeeded")}),
             ),
             tests=({"name": "isolated_suite", "passed": True},),
         )
+        fabricated = ForgeResult(job_id, request["request_id"], request["correlation_id"], "succeeded", (Artifact("execution_receipt", {"proposal_id": proposal["proposal_id"]}),), tests=({"passed": True},))
+        with self.assertRaises(ValueError):
+            dashboard.record_forge_result(item.work_item_id, fabricated, developer)
         dashboard.record_forge_result(item.work_item_id, result, developer)
+        with self.assertRaises(ValueError):
+            dashboard.record_forge_result(item.work_item_id, result, developer)
         dashboard.decide(item.work_item_id, "approve", owner)
         self.assertEqual((self.project / "app.py").read_text(encoding="utf-8"), "VALUE = 2\n")
         self.assertTrue(any(entry.get("event") == "live_patch_applied" for entry in item.evidence))
@@ -129,16 +150,20 @@ class LiveRepairTests(unittest.TestCase):
         item2 = dashboard.approve_isolated_work(item2.work_item_id, owner, "source")
         dashboard.start_forge(item2.work_item_id, developer)
         request2 = item2.request
+        job_id2 = request2["forge_job_id"]
+        tested_hash2 = proposal2["tested_target_sha256"]
         result2 = ForgeResult(
-            str(uuid.uuid4()), request2["request_id"], request2["correlation_id"], "succeeded",
+            job_id2, request2["request_id"], request2["correlation_id"], "succeeded",
             (
                 Artifact("diff", {"target_file": "app.py", "patch": diff2}),
-                Artifact("execution_receipt", {"proposal_id": proposal2["proposal_id"]}),
+                Artifact("execution_receipt", {"proposal_id": proposal2["proposal_id"], "tested_target_sha256": tested_hash2, "worker_attestation": forge_worker._attestation(job_id2, request2["request_id"], request2["correlation_id"], proposal2["proposal_id"], tested_hash2, "succeeded")}),
             ),
             tests=({"name": "isolated_suite", "passed": True},),
         )
         dashboard.record_forge_result(item2.work_item_id, result2, developer)
-        dashboard.decide(item2.work_item_id, "approve", reviewer)
+        with self.assertRaises(PermissionError):
+            dashboard.decide(item2.work_item_id, "approve", reviewer)
+        self.assertEqual(item2.state, "awaiting_human_decision")
         self.assertEqual((self.project / "app.py").read_text(encoding="utf-8"), "VALUE = 1\n")
         saved2, _ = sandbox.get_sandbox_proposal(proposal2["proposal_id"])
         self.assertEqual(saved2["status"], "sandbox_tests_passed")

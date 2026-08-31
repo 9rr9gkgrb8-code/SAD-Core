@@ -36,6 +36,20 @@ class ForgeStudentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             homework_to_quest("math", "x" * 1_000_001)
 
+    def test_strict_types_and_xp_validation(self):
+        quest = homework_to_quest("math", "Solve x")
+        with self.assertRaises(ValueError):
+            complete_quest(StudentProgress("student"), quest, .9, "no")
+        with self.assertRaises(ValueError):
+            complete_quest(StudentProgress("student"), quest, True, True)
+        with self.assertRaises(ValueError):
+            StudentProgress("student", xp=-1)
+
+    def test_learning_objective_changes_quest_identity(self):
+        first = homework_to_quest("math", "Solve x", "Use substitution")
+        second = homework_to_quest("math", "Solve x", "Use elimination")
+        self.assertNotEqual(first.quest_id, second.quest_id)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,14 @@ import beta_gate
 
 
 class BetaGateContractTests(unittest.TestCase):
+    def test_acceptance_parser_rejects_marker_prose_and_requires_all_sections(self):
+        with self.assertRaises(ValueError):
+            beta_gate.parse_acceptance_record("Human acceptance required before public Beta")
+
+    def test_release_mode_rejects_hold_record(self):
+        with mock.patch.dict("os.environ", {"SAD_BETA_RELEASE": "1"}, clear=False), mock.patch("beta_gate.run_stability_gate", return_value=([], {})):
+            self.assertEqual(beta_gate.main(), 1)
+
     def test_missing_repository_evidence_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             with mock.patch.object(beta_gate, "ROOT", Path(directory)):

@@ -16,6 +16,7 @@ from sandbox import (
     get_sandbox_proposal,
     validate_approved_patch,
     validate_sandbox_path,
+    hmac_compare_hash,
 )
 
 
@@ -58,6 +59,9 @@ def apply_approved_proposal(proposal_id):
         raise ValueError("The tested sandbox target is unavailable.")
 
     proposed_hash = _hash_file(proposed_target)
+    tested_hash = proposal.get("tested_target_sha256")
+    if not tested_hash or not hmac_compare_hash(proposed_hash, tested_hash):
+        raise ValueError("The approved bytes no longer match the tested target hash.")
     original_hash = _hash_file(live_target)
     if proposed_hash == original_hash:
         raise ValueError("The approved proposal does not change the live target.")

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import uuid
+from pathlib import PurePosixPath, PureWindowsPath
 
 
 SCHEMA_VERSION = "1.0"
@@ -74,7 +75,7 @@ class RepairRequest:
             raise ValueError("Forge requests require prior human approval for isolated work.")
         if not self.objective.strip() or not self.source_snapshot.strip():
             raise ValueError("Objective and source snapshot are required.")
-        if not self.allowed_targets or any(".." in target or target.startswith(("/", "\\")) for target in self.allowed_targets):
+        if not self.allowed_targets or any(not _repository_relative_target(target) for target in self.allowed_targets):
             raise ValueError("Allowed targets must be repository-relative paths.")
         if not self.test_plan:
             raise ValueError("A deterministic test plan is required.")
@@ -84,6 +85,22 @@ class RepairRequest:
         data["allowed_targets"] = list(self.allowed_targets)
         data["test_plan"] = list(self.test_plan)
         return data
+
+
+def _repository_relative_target(target):
+    if not isinstance(target, str) or not target or target != target.strip() or "\0" in target:
+        return False
+    if "\\" in target:
+        return False
+    posix = PurePosixPath(target)
+    windows = PureWindowsPath(target)
+    return (
+        not posix.is_absolute()
+        and not windows.is_absolute()
+        and not windows.drive
+        and all(part not in {"", ".", ".."} for part in posix.parts)
+        and posix.as_posix() == target
+    )
 
 
 @dataclass(frozen=True)
