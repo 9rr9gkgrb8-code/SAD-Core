@@ -49,10 +49,22 @@ def _validated_target_path(sandbox_path, target_file):
 
 
 def _hash_file(path):
+    path = Path(path)
+    before = path.lstat()
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Integrity targets must be regular non-symlink files.")
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+            raise ValueError("Integrity target changed while it was being opened.")
         for chunk in iter(lambda: stream.read(65536), b""):
             digest.update(chunk)
+    after = path.lstat()
+    if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns):
+        raise ValueError("Integrity target changed while it was being read.")
     return digest.hexdigest()
 
 
@@ -208,6 +220,10 @@ def run_sandbox_tests(sandbox_path, runner=None):
     proposal["git_topology_integrity"] = git_before == git_after
     proposal["host_only_git_authority"] = authority_ok
     proposal["context_execution_root_match"] = context_ok
+    proposal["tested_target_sha256"] = (
+        _hash_file(_validated_target_path(sandbox_path, proposal.get("target_file")))
+        if proposal["status"] == "sandbox_tests_passed" else None
+    )
     proposal_path.write_text(json.dumps(proposal, indent=2), encoding="utf-8")
 
     return proposal
@@ -219,8 +235,10 @@ def create_draft_patch(sandbox_path, target_file, find_text, replacement_text):
 
     target_path = _validated_target_path(sandbox_path, target_file)
     original = target_path.read_text(encoding="utf-8")
-    if not find_text or find_text not in original:
-        raise ValueError("The requested original text was not found in the sandbox file.")
+    if not isinstance(find_text, str) or not find_text or original.count(find_text) != 1:
+        raise ValueError("The requested original text must occur exactly once in the sandbox file.")
+    if not isinstance(replacement_text, str) or replacement_text == find_text:
+        raise ValueError("The replacement must be different text.")
 
     updated = original.replace(find_text, replacement_text, 1)
     target_path.write_text(updated, encoding="utf-8")
@@ -257,8 +275,9 @@ def _validate_patch_scope(diff, target_file):
     """Allow a text patch for exactly one approved repository-root file."""
     if not isinstance(diff, str) or "GIT binary patch" in diff or "\0" in diff:
         raise ValueError("Only a text patch is allowed.")
-    old_headers = [line for line in diff.splitlines() if line.startswith("--- ")]
-    new_headers = [line for line in diff.splitlines() if line.startswith("+++ ")]
+    lines = diff.splitlines()
+    old_headers = [line for line in lines if line.startswith("---")]
+    new_headers = [line for line in lines if line.startswith("+++")]
     if old_headers != [f"--- original/{target_file}"] or new_headers != [f"+++ proposed/{target_file}"]:
         raise ValueError("The patch must modify exactly its approved target file.")
 
@@ -269,8 +288,18 @@ def approve_sandbox_proposal(proposal_id):
     if proposal.get("status") != "sandbox_tests_passed":
         return None
 
-    _validate_patch_scope(proposal.get("draft_diff", ""), proposal["target_file"])
     sandbox_path = validate_sandbox_path(SANDBOX_DIRECTORY / _validated_proposal_id(proposal_id))
+    target = _validated_target_path(sandbox_path, proposal["target_file"])
+    tested_hash = proposal.get("tested_target_sha256")
+    if not tested_hash or not hmac_compare_hash(_hash_file(target), tested_hash):
+        raise ValueError("The sandbox target no longer matches the bytes that passed testing.")
+    live_source = PROJECT_DIRECTORY / proposal["target_file"]
+    original = live_source.read_text(encoding="utf-8")
+    current = target.read_text(encoding="utf-8")
+    reviewed_diff = "".join(difflib.unified_diff(original.splitlines(keepends=True), current.splitlines(keepends=True), fromfile=f"original/{proposal['target_file']}", tofile=f"proposed/{proposal['target_file']}"))
+    if reviewed_diff != proposal.get("draft_diff"):
+        raise ValueError("The review diff no longer describes the tested sandbox bytes.")
+    _validate_patch_scope(reviewed_diff, proposal["target_file"])
     proposal_path = sandbox_path / "proposal.json"
     proposal["status"] = "draft_approved_by_human"
     proposal["approved_at"] = datetime.now().isoformat(timespec="seconds")

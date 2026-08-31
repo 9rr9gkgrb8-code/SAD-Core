@@ -22,6 +22,11 @@ class SadForgeContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             RepairRequest("f", "repair", "sha", "scope", ("app.py",), ("tests",), "forge_approved")
 
+    def test_request_rejects_empty_absolute_windows_and_noncanonical_targets(self):
+        for target in ("", "/etc/passwd", r"C:\Windows\system.ini", "a/../app.py", r"folder\app.py", "./app.py"):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                RepairRequest("f", "repair", "sha", "scope", (target,), ("tests",), "approved_for_isolated_work")
+
     def test_result_has_durable_artifacts_and_no_authority_field(self):
         request = self.request()
         artifact = Artifact("diff", {"patch": "--- a/app.py"})

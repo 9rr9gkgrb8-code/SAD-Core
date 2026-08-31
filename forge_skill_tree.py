@@ -125,5 +125,26 @@ def boss_test(root_id, branch_id):
     return bosses[0]
 
 
-def available_branches(root_id):
-    return tuple(get_skill_tree(root_id)["branches"].keys())
+def unlocked_nodes(root_id, branch_id=None, completed_nodes=()):
+    """Return only nodes whose declared prerequisites have been completed."""
+    completed = set(completed_nodes)
+    tree = get_skill_tree(root_id)
+    nodes = list(tree["trunk"])
+    if branch_id is not None:
+        nodes.extend(branch_nodes(root_id, branch_id))
+    return tuple(node for node in nodes if set(node.prerequisites).issubset(completed))
+
+
+def require_prerequisites(node, completed_nodes=()):
+    missing = tuple(item for item in node.prerequisites if item not in set(completed_nodes))
+    if missing:
+        raise PermissionError("Complete prerequisite skills first: " + ", ".join(missing))
+    return node
+
+
+def available_branches(root_id, completed_nodes=None):
+    branches = get_skill_tree(root_id)["branches"]
+    if completed_nodes is None:
+        return tuple(branches.keys())
+    completed = set(completed_nodes)
+    return tuple(name for name, nodes in branches.items() if not nodes[0].prerequisites or set(nodes[0].prerequisites).issubset(completed))

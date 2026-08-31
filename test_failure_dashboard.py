@@ -103,11 +103,16 @@ class FailureDashboardTests(unittest.TestCase):
         reviewer = self.auth.login("reviewer", "StrongReviewer123")
         dashboard.start_forge(item.work_item_id, developer)
         request = item.request
-        result = ForgeResult(str(uuid.uuid4()), request["request_id"], request["correlation_id"], "succeeded", (Artifact("tests", {"passed": 63}),))
+        from forge_worker import _attestation
+        proposal_id = str(uuid.uuid4())
+        receipt = Artifact("execution_receipt", {"proposal_id": proposal_id, "tested_target_sha256": "a" * 64, "worker_attestation": _attestation(request["forge_job_id"], request["request_id"], request["correlation_id"], proposal_id, "a" * 64, "failed")})
+        result = ForgeResult(request["forge_job_id"], request["request_id"], request["correlation_id"], "failed", (Artifact("tests", {"passed": 0}), receipt), error="failed")
         dashboard.record_forge_result(item.work_item_id, result, developer)
         with self.assertRaises(PermissionError):
             dashboard.decide(item.work_item_id, "approve", developer)
-        dashboard.decide(item.work_item_id, "approve", reviewer)
+        with self.assertRaises(PermissionError):
+            dashboard.decide(item.work_item_id, "approve", reviewer)
+        dashboard.decide(item.work_item_id, "reject", reviewer)
         dashboard.close(item.work_item_id, self.owner)
         sequences = [entry["sequence"] for entry in dashboard.dev_items[item.work_item_id].evidence]
         self.assertEqual(sequences, sorted(sequences))

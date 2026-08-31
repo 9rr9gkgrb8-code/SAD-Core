@@ -10,8 +10,9 @@ from unittest.mock import patch
 from api import SadApiService, create_server
 from auth import AuthService
 from failure_dashboard import FailureDashboard
+import forge_worker
 from forge_worker import verify_approved_job
-from sad_forge_contract import ForgeResult
+from sad_forge_contract import Artifact, ForgeResult
 from student_progress import ProgressStore
 from alpha import ensure_owner
 
@@ -87,7 +88,8 @@ class AlphaProductTests(unittest.TestCase):
     def test_worker_generates_real_diff_evidence_without_approval_authority(self):
         request = {
             "request_id": str(uuid.uuid4()), "correlation_id": str(uuid.uuid4()),
-            "allowed_targets": ["app.py"], "objective": "verify",
+            "allowed_targets": ["app.py"], "objective": "verify", "forge_job_id": str(uuid.uuid4()),
+            "source_snapshot": "snapshot", "test_plan": ["python -m unittest -v"],
         }
         item = type("Item", (), {"request": request, "failure_id": str(uuid.uuid4())})()
         proposal = {"proposal_id": str(uuid.uuid4())}
@@ -97,6 +99,7 @@ class AlphaProductTests(unittest.TestCase):
             "status": "sandbox_tests_passed", "test_output": "OK", "ordered_evidence": [],
             "live_project_integrity": True, "git_topology_integrity": True,
             "host_only_git_authority": True, "context_execution_root_match": True,
+            "tested_target_sha256": "a" * 64,
         }
         planner = lambda target, objective, source: {
             "find_text": "VALUE = 1", "replacement_text": "VALUE = 2", "rationale": "Test repair",
@@ -124,11 +127,12 @@ class AlphaProductTests(unittest.TestCase):
         _, work = self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/approve-isolated", self.headers(), {
             "source_snapshot": "alpha-test",
         })
-        result = ForgeResult(
-            str(uuid.uuid4()), work["request"]["request_id"], work["request"]["correlation_id"],
-            "succeeded", tests=({"name": "suite", "passed": True},),
-        )
-        with patch("api.verify_approved_job", return_value=result):
+        def verified(item):
+            request = item.request
+            proposal_id = str(uuid.uuid4())
+            receipt = Artifact("execution_receipt", {"proposal_id": proposal_id, "tested_target_sha256": "a" * 64, "worker_attestation": forge_worker._attestation(request["forge_job_id"], request["request_id"], request["correlation_id"], proposal_id, "a" * 64, "succeeded")})
+            return ForgeResult(request["forge_job_id"], request["request_id"], request["correlation_id"], "succeeded", (receipt,), tests=({"name": "suite", "passed": True},))
+        with patch("api.verify_approved_job", side_effect=verified):
             _, completed = self.service.dispatch(
                 "POST", f"/v1/jobs/{work['work_item_id']}/execute", self.headers(), {},
             )

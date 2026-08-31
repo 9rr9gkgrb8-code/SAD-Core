@@ -71,6 +71,7 @@ class SandboxTests(unittest.TestCase):
         )
         proposal_path = sandbox_path / "proposal.json"
         proposal["status"] = "sandbox_tests_passed"
+        proposal["tested_target_sha256"] = sandbox._hash_file(sandbox_path / "personality.py")
         proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
         approved = sandbox.approve_sandbox_proposal(proposal["proposal_id"])
         exported_path = sandbox.export_approved_patch(proposal["proposal_id"])
@@ -96,6 +97,7 @@ class SandboxTests(unittest.TestCase):
             '"""Sasha\'s validated draft response layer."""',
         )
         proposal["status"] = "sandbox_tests_passed"
+        proposal["tested_target_sha256"] = sandbox._hash_file(sandbox_path / "personality.py")
         (sandbox_path / "proposal.json").write_text(
             json.dumps(proposal), encoding="utf-8"
         )

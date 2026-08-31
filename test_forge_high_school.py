@@ -4,6 +4,7 @@ from forge_high_school import (
     HINT_POLICY,
     build_high_school_plan,
     high_school_homework_to_quest,
+    verify_high_school_completion,
 )
 
 
@@ -65,6 +66,18 @@ class ForgeHighSchoolTests(unittest.TestCase):
     def test_unknown_subject_fails_closed(self):
         with self.assertRaises(ValueError):
             build_high_school_plan(10, "astrology")
+
+    def test_completion_enforces_teaching_and_verification_evidence(self):
+        bundle = high_school_homework_to_quest(10, "math", "Solve x")
+        with self.assertRaises(PermissionError):
+            verify_high_school_completion(bundle, {"student_attempt": True})
+        evidence = {
+            "student_attempt": True,
+            "method_explanation": True,
+            "transfer_mastery_passed": True,
+            "source_or_work_verified": True,
+        }
+        self.assertTrue(verify_high_school_completion(bundle, evidence))
 
 
 if __name__ == "__main__":
