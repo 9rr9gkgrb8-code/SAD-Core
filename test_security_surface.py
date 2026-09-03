@@ -37,10 +37,12 @@ class SecuritySurfaceTests(unittest.TestCase):
         # Every network-capable production file is explicitly reviewed. bounded_http.py
         # is the fail-fast local/private listener boundary; sad_sdk.py is the Tier 2
         # local integration client; voice_runtime.py is the loopback-only STT/TTS adapter.
+        # client_endpoint.py only parses and validates endpoint URLs; it performs no
+        # network I/O and fails closed outside loopback HTTP or remote HTTPS.
         self.assertEqual(
             network_files,
             {
-                "api.py", "bounded_http.py", "mobile_gateway.py", "model_adapter.py",
+                "api.py", "bounded_http.py", "client_endpoint.py", "mobile_gateway.py", "model_adapter.py",
                 "sad_clients.py", "sad_sdk.py", "voice_runtime.py",
             },
         )

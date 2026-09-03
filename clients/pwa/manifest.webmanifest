@@ -1,0 +1,10 @@
+{
+  "name": "SAD + Forge",
+  "short_name": "SAD",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "description": "SAD + Forge local-first AI and learning client"
+}
