@@ -113,3 +113,24 @@ def high_school_homework_to_quest(grade, subject, assignment, learning_objective
             "surface_uncertainty_when_unverified": True,
         },
     }
+
+
+def verify_high_school_completion(bundle, evidence):
+    """Enforce the curriculum teaching and verification contract at completion time."""
+    if not isinstance(bundle, dict) or not isinstance(evidence, dict):
+        raise ValueError("Curriculum bundle and completion evidence are required.")
+    curriculum = bundle.get("curriculum") or {}
+    contract = bundle.get("teaching_contract") or {}
+    if not all(contract.get(name) is True for name in (
+        "do_not_replace_student_thinking", "teach_method_before_final_answer",
+        "use_worked_examples_after_hints", "require_transfer_mastery_check",
+        "surface_uncertainty_when_unverified",
+    )):
+        raise ValueError("The teaching contract is incomplete.")
+    required = {"student_attempt", "method_explanation", "transfer_mastery_passed"}
+    if curriculum.get("verification_required"):
+        required.add("source_or_work_verified")
+    missing = [name for name in sorted(required) if not evidence.get(name)]
+    if missing:
+        raise PermissionError("Completion evidence is missing: " + ", ".join(missing))
+    return True

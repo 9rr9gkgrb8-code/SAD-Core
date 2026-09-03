@@ -63,6 +63,7 @@ INTERVIEW_CHALLENGE_TYPES = (
     "leetcode_style", "debugging", "code_review", "system_design", "security_scenario",
     "technical_explanation", "behavioral_star",
 )
+MAX_PATH_HISTORY = 100
 
 
 def get_career_track(track_id):
@@ -101,6 +102,7 @@ def switch_path(progress, new_track_id):
     progress.setdefault("path_history", [])
     if previous and previous != new_track_id:
         progress["path_history"].append(previous)
+        del progress["path_history"][:-MAX_PATH_HISTORY]
     progress["active_track"] = new_track_id
     progress.setdefault("track_mastery", {})
     return progress
@@ -117,6 +119,7 @@ def backtrack_path(progress):
         progress.setdefault("visited_tracks", [])
         if current not in progress["visited_tracks"]:
             progress["visited_tracks"].append(current)
+            del progress["visited_tracks"][:-MAX_PATH_HISTORY]
     progress["active_track"] = previous
     return progress
 

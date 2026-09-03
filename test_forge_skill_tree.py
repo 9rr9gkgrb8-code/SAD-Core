@@ -1,6 +1,6 @@
 import unittest
 
-from forge_skill_tree import available_branches, boss_test, branch_nodes, get_skill_tree
+from forge_skill_tree import available_branches, boss_test, branch_nodes, get_skill_tree, require_prerequisites, unlocked_nodes
 
 
 class ForgeSkillTreeTests(unittest.TestCase):
@@ -51,6 +51,15 @@ class ForgeSkillTreeTests(unittest.TestCase):
             get_skill_tree("magic")
         with self.assertRaises(ValueError):
             branch_nodes("cybersecurity", "attack_everything")
+
+    def test_declared_prerequisites_are_enforced(self):
+        boss = boss_test("technology", "software_engineering")
+        with self.assertRaises(PermissionError):
+            require_prerequisites(boss, ())
+        self.assertIs(require_prerequisites(boss, ("swe_design",)), boss)
+        unlocked = unlocked_nodes("technology", "software_engineering", ("tech_computing",))
+        self.assertIn("tech_code", {node.node_id for node in unlocked})
+        self.assertNotIn("swe_boss", {node.node_id for node in unlocked})
 
 
 if __name__ == "__main__":

@@ -13,6 +13,20 @@ PINNED_IMAGE = re.compile(r"^[a-zA-Z0-9._/-]+@sha256:[0-9a-f]{64}$")
 MAX_OUTPUT_BYTES = 2_000_000
 
 
+def _trusted_default_docker():
+    candidates = []
+    if os.name == "nt":
+        program_files = os.environ.get("ProgramFiles")
+        if program_files:
+            candidates.append(Path(program_files) / "Docker" / "Docker" / "resources" / "bin" / "docker.exe")
+        system_root = os.environ.get("SystemRoot")
+        if system_root:
+            candidates.append(Path(system_root) / "System32" / "docker.exe")
+    else:
+        candidates.extend((Path("/usr/bin/docker"), Path("/usr/local/bin/docker")))
+    return next((path.resolve() for path in candidates if path.is_file() and not path.is_symlink()), None)
+
+
 class SandboxUnavailable(OSError):
     """Raised when a genuine container boundary cannot be established."""
 
@@ -28,11 +42,13 @@ class DockerSandboxRunner:
     """Run tests in a resource-limited container with no network or host authority."""
 
     def __init__(self, executable=None, image=None):
-        self.executable = Path(executable or shutil.which("docker") or "")
+        # Never trust a workspace-controlled PATH entry. Callers may supply an explicit
+        # absolute runtime; otherwise only conventional system installation paths qualify.
+        self.executable = Path(executable).resolve() if executable else _trusted_default_docker()
         self.image = image or os.getenv("SAD_SANDBOX_IMAGE", "")
 
     def _preflight(self, workspace):
-        if not self.executable or not self.executable.is_absolute() or not self.executable.is_file():
+        if not self.executable or not self.executable.is_absolute() or not self.executable.is_file() or self.executable.is_symlink():
             raise SandboxUnavailable("Docker is required; unsafe local execution is disabled.")
         if not PINNED_IMAGE.fullmatch(self.image):
             raise SandboxUnavailable("SAD_SANDBOX_IMAGE must be pinned as name@sha256:<64 lowercase hex characters>.")

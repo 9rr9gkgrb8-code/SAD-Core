@@ -11,6 +11,7 @@ from auth import AuthService
 from failure_dashboard import FailureDashboard
 from student_progress import ProgressStore
 from sad_clients import PersonalStudyClient, ForgeStudentClient, SadClient
+from sad_forge_contract import Artifact, ForgeResult
 
 
 class ApiTests(unittest.TestCase):
@@ -61,9 +62,16 @@ class ApiTests(unittest.TestCase):
             "artifacts": [{"kind": "tests", "content": {"passed": True}}],
             "tests": [{"name": "suite", "passed": True}],
         }
-        _, result = self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/result", self.headers(developer), result_payload)
-        self.assertEqual(result["state"], "awaiting_human_decision")
-        self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/decision", self.headers(reviewer), {"decision": "approve"})
+        with self.assertRaises(ValueError):
+            self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/result", self.headers(developer), result_payload)
+        item = self.service.dashboard.dev_items[work["work_item_id"]]
+        request = item.request
+        from forge_worker import _attestation
+        proposal_id = str(uuid.uuid4())
+        receipt = Artifact("execution_receipt", {"proposal_id": proposal_id, "tested_target_sha256": "a" * 64, "worker_attestation": _attestation(request["forge_job_id"], request["request_id"], request["correlation_id"], proposal_id, "a" * 64, "failed")})
+        authentic = ForgeResult(request["forge_job_id"], request["request_id"], request["correlation_id"], "failed", (receipt,), error="failed")
+        self.service.dashboard.record_forge_result(work["work_item_id"], authentic, developer)
+        self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/decision", self.headers(reviewer), {"decision": "reject"})
         self.service.dispatch("POST", f"/v1/jobs/{work['work_item_id']}/close", self.headers(), {})
         _, dashboard = self.service.dispatch("GET", "/v1/dashboard", self.headers(), {})
         self.assertEqual(dashboard["development"][0]["state"], "closed")

@@ -14,12 +14,12 @@
     section.hidden=true;
     section.innerHTML=`
       <div class="chat-heading">
-        <div><p class="eyebrow">SAD CHAT</p><h2 tabindex="-1">Talk with SAD</h2><p class="muted">Free-form conversation stays separate from Forge quests and repair authority.</p></div>
-        <button id="new-chat" class="secondary" type="button">New conversation</button>
+        <div><p class="eyebrow">SAD</p><h2 tabindex="-1">How can I help?</h2><p class="muted">Talk to SAD here. Forge and repair tools stay behind the scenes until the task needs them.</p></div>
+        <button id="new-chat" class="secondary" type="button">New chat</button>
       </div>
       <div class="chat-shell">
         <aside class="chat-history" aria-label="Conversation history">
-          <div class="chat-history-title"><h3>Conversations</h3><span id="chat-history-count" class="muted"></span></div>
+          <div class="chat-history-title"><h3>Chats</h3><span id="chat-history-count" class="muted"></span></div>
           <div id="chat-session-list" class="chat-session-list"></div>
         </aside>
         <div class="chat-main">
@@ -28,7 +28,7 @@
             <button id="archive-chat" class="secondary" type="button" disabled>Archive</button>
           </div>
           <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="SAD conversation">
-            <div class="chat-empty"><strong>Start anywhere.</strong><span>Ask a question, think something through, troubleshoot, plan, or just talk.</span></div>
+            <div class="chat-empty"><strong>What are we working on?</strong><span>Ask a question, troubleshoot something, plan, study, or just talk.</span></div>
           </div>
           <form id="chat-form" class="chat-composer">
             <label for="chat-input" class="chat-input-label">Message SAD</label>
@@ -48,7 +48,7 @@
     byId("chat-title").textContent=session.title||"Conversation";
     const messages=session.messages||[];
     if(!messages.length){
-      thread.innerHTML='<div class="chat-empty"><strong>Start anywhere.</strong><span>Ask a question, think something through, troubleshoot, plan, or just talk.</span></div>';
+      thread.innerHTML='<div class="chat-empty"><strong>What are we working on?</strong><span>Ask a question, troubleshoot something, plan, study, or just talk.</span></div>';
     }else{
       thread.innerHTML=messages.map(item=>{
         const mine=item.role==="user";
@@ -65,7 +65,7 @@
   function renderSessionList(sessions){
     byId("chat-history-count").textContent=sessions.length?String(sessions.length):"";
     const list=byId("chat-session-list");
-    if(!sessions.length){list.innerHTML='<p class="muted">No saved conversations yet.</p>';return}
+    if(!sessions.length){list.innerHTML='<p class="muted">No saved chats yet.</p>';return}
     list.innerHTML=sessions.map(session=>`<button type="button" class="chat-session ${session.session_id===currentSessionId?"active":""}" data-session="${session.session_id}"><strong>${escapeText(session.title)}</strong><span>${escapeText(new Date(session.updated_at).toLocaleString())}</span></button>`).join("");
   }
 
@@ -78,13 +78,13 @@
   }
 
   async function newConversation(){
-    byId("chat-status").textContent="Starting a new conversation…";
+    byId("chat-status").textContent="Starting a new chat…";
     const session=await apiCall("/v1/chat/sessions",{method:"POST",body:"{}"});
     currentSessionId=session.session_id;
     renderMessages(session);
     await loadSessions(false);
     byId("chat-input").focus();
-    byId("chat-status").textContent="New conversation ready.";
+    byId("chat-status").textContent="New chat ready.";
   }
 
   async function openSession(sessionId,refreshList=true){
@@ -139,7 +139,7 @@
       currentSessionId=null;
       renderMessages({title:"New conversation",messages:[]});
       await loadSessions(true);
-      byId("chat-status").textContent="Conversation archived.";
+      byId("chat-status").textContent="Chat archived.";
     }catch(error){byId("chat-status").textContent=error.message}
   }
 
@@ -147,7 +147,7 @@
     const nav=byId("nav");
     if(!nav||nav.querySelector('[data-view="chat"]'))return;
     const button=document.createElement("button");
-    button.type="button";button.textContent="SAD Chat";button.dataset.view="chat";button.setAttribute("aria-controls","chat");
+    button.type="button";button.textContent="Chat";button.dataset.view="chat";button.setAttribute("aria-controls","chat");
     button.onclick=async()=>{window.showView("chat");await loadSessions(true)};
     nav.prepend(button);
     if(!initialized){

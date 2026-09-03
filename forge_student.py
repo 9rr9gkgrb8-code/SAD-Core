@@ -38,6 +38,10 @@ class StudentProgress:
     companion_stage: int = 0
     hint_levels: dict[str, int] = field(default_factory=dict)
 
+    def __post_init__(self):
+        if isinstance(self.xp, bool) or not isinstance(self.xp, int) or self.xp < 0:
+            raise ValueError("XP must be a non-negative integer.")
+
     @property
     def rank(self):
         return next(rank for threshold, rank in reversed(RANK_THRESHOLDS) if self.xp >= threshold)
@@ -57,7 +61,7 @@ def homework_to_quest(subject, assignment, learning_objective=""):
     if len(assignment) > 1_000_000 or len(learning_objective) > 10_000:
         raise ValueError("Quest input exceeds the safe size limit.")
     objective = learning_objective.strip() or f"Understand and complete the supplied {subject} work"
-    digest = hashlib.sha256(f"{subject}\0{assignment}".encode()).hexdigest()[:12]
+    digest = hashlib.sha256(f"{subject}\0{assignment}\0{objective}".encode()).hexdigest()[:12]
     return Quest(
         quest_id=f"homework-{digest}",
         title=f"The {subject.title()} Challenge",
@@ -79,8 +83,12 @@ def next_hint(progress, quest_id):
 
 def complete_quest(progress, quest, score, boss_passed):
     """Award progression only when the mastery and boss gates pass."""
-    if not 0 <= score <= 1:
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 1:
         raise ValueError("Mastery score must be between 0 and 1.")
+    if not isinstance(boss_passed, bool):
+        raise ValueError("boss_passed must be a boolean.")
+    if isinstance(progress.xp, bool) or not isinstance(progress.xp, int) or progress.xp < 0:
+        raise ValueError("XP must be a non-negative integer.")
     previous = progress.mastery.get(quest.subject, 0.0)
     progress.mastery[quest.subject] = max(previous, score)
     mastered = score >= quest.mastery_threshold and boss_passed

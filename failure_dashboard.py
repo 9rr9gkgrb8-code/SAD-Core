@@ -192,6 +192,11 @@ class FailureDashboard:
 
     @synchronized
     def ingest(self, event):
+        """Accept a trusted in-process evaluator event.
+
+        External callers must authenticate at the API boundary before constructing an event;
+        this method is intentionally not an unauthenticated network endpoint.
+        """
         existing_id = self.by_signature.get(event.signature)
         if existing_id:
             existing = self.failures[existing_id]
@@ -261,17 +266,25 @@ class FailureDashboard:
         if item.state != DevState.APPROVED_FOR_ISOLATED_WORK.value:
             raise ValueError("Work is not approved for Forge.")
         item.state = DevState.IN_FORGE.value
+        item.request["forge_job_id"] = str(uuid.uuid4())
+        item.request["forge_result_recorded"] = False
         item.assigned_to = actor["account_id"]
-        item.evidence.append(self._evidence("forge_started", actor["account_id"]))
+        item.evidence.append(self._evidence("forge_started", actor["account_id"], {"job_id": item.request["forge_job_id"]}))
         self._save()
         return item
 
     @synchronized
     def record_forge_result(self, work_item_id, result, token):
+        from forge_worker import verify_result_authenticity
         actor = self._require(token, "development:work")
         item = self.dev_items[work_item_id]
-        if not item.request or result.request_id != item.request["request_id"] or result.correlation_id != item.request["correlation_id"]:
+        if item.state != DevState.IN_FORGE.value:
+            raise ValueError("Work is not currently running in Forge.")
+        if not item.request or result.request_id != item.request["request_id"] or result.correlation_id != item.request["correlation_id"] or result.job_id != item.request.get("forge_job_id"):
             raise ValueError("Forge result does not correlate to this work item.")
+        if item.request.get("forge_result_recorded") or not verify_result_authenticity(result):
+            raise ValueError("Forge result is replayed or lacks valid worker authenticity.")
+        item.request["forge_result_recorded"] = True
         item.result = result.to_dict()
         item.artifacts = [artifact.to_dict() for artifact in result.artifacts]
         item.state = DevState.AWAITING_HUMAN_DECISION.value if result.state in {"succeeded", "failed"} else DevState.VERIFYING.value
@@ -295,6 +308,8 @@ class FailureDashboard:
             raise ValueError("Work is not awaiting a human decision.")
         if decision not in {"approve", "reject"}:
             raise ValueError("Decision must be approve or reject.")
+        if decision == "approve" and actor.get("role") != "owner":
+            raise PermissionError("Only an Owner may approve a repair.")
 
         live_receipt = None
         proposal_id = None
