@@ -27,6 +27,8 @@ class ForgeGameUiTests(unittest.TestCase):
             "complete-form",
             "boss-prompt",
             "companion-orb",
+            "lesson-library",
+            "lesson-library-status",
         ):
             self.assertIn(f'id="{element_id}"', self.html)
 
@@ -46,6 +48,14 @@ class ForgeGameUiTests(unittest.TestCase):
         for level in ("nudge", "stronger_hint", "worked_example", "explanation"):
             self.assertIn(level, self.js)
             self.assertIn(f'data-level="{level}"', self.html)
+
+    def test_starter_lessons_load_into_real_quest_builder(self):
+        for lesson in ("Variables", "Decisions", "Loops", "Fact check", "Fraction mission", "Strong paragraph"):
+            self.assertIn(f'title:"{lesson}"', self.js)
+        self.assertIn("renderLessonLibrary", self.js)
+        self.assertIn("form.elements.subject.value", self.js)
+        self.assertIn("form.elements.learning_objective.value", self.js)
+        self.assertIn("form.elements.assignment.value", self.js)
 
     def test_game_surface_remains_responsive_and_focus_visible(self):
         self.assertIn(".forge-layout", self.css)
