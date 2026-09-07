@@ -4,6 +4,14 @@ const $=id=>document.getElementById(id);
 const FORGE_RANKS=[["Initiate",0],["Apprentice",100],["Journeyman",300],["Expert",700],["Master",1500]];
 const COMPANION_STAGES=["Initiate Egg","Apprentice Companion","Journeyman Companion","Expert Companion","Master Companion"];
 const HINT_LEVELS=["nudge","stronger_hint","worked_example","explanation"];
+const STARTER_LESSONS=[
+  {subject:"Python",title:"Variables",objective:"Store and reuse information with clear variable names",assignment:'Create a variable named robot_name that stores the text "Bolt". Then explain why text needs quotation marks.'},
+  {subject:"Python",title:"Decisions",objective:"Use a condition to make a program choose an action",assignment:"Write an if statement that checks whether score is at least 10. Explain what >= means and why the line ends with a colon."},
+  {subject:"Python",title:"Loops",objective:"Repeat a useful action without copying code",assignment:"Write the first line of a for loop that repeats three times. Explain what range(3) produces."},
+  {subject:"AI literacy",title:"Fact check",objective:"Test an AI answer before trusting or sharing it",assignment:"List three ways to check an AI-generated claim. Identify which source you would trust most and explain why."},
+  {subject:"Math",title:"Fraction mission",objective:"Find equivalent fractions and explain the method",assignment:"Find two fractions equivalent to 3/4. Show how multiplication creates each equivalent fraction."},
+  {subject:"Writing",title:"Strong paragraph",objective:"Build a paragraph with a claim, evidence and explanation",assignment:"Write one paragraph explaining why practice improves a skill. Include a clear claim, one example and an explanation connecting the example to the claim."},
+];
 async function api(path,options={}){const mobileHeaders=window.SADMobile?.headers?.()||{};const headers={"Content-Type":"application/json",...mobileHeaders,...(options.headers||{})};if(token)headers.Authorization=`Bearer ${token}`;const response=await fetch(path,{...options,headers});const data=await response.json();if(!response.ok){window.SADMobile?.handleApiError?.(data.error||"Request failed");throw new Error(data.error||"Request failed")}return data}
 function message(text,error=false){$("notice").textContent=text;$("notice").className=error?"notice error":"notice"}
 function showView(id){document.querySelectorAll(".view").forEach(x=>x.hidden=x.id!==id);document.querySelectorAll("nav button").forEach(x=>{const active=x.dataset.view===id;x.classList.toggle("active",active);if(active)x.setAttribute("aria-current","page");else x.removeAttribute("aria-current")});if(id==="dashboard")loadDashboard();if(id==="accounts")loadAccounts();if(id==="forge")loadProgress();if(id==="classroom")loadClassroom();if(id==="mobile")loadMobileDevices();const heading=$(id)?.querySelector("h2");if(heading)heading.focus()}
@@ -17,6 +25,23 @@ function rankProgress(xp,rank){const index=Math.max(0,FORGE_RANKS.findIndex(([na
 function renderForgeProgress(p){const xp=Number(p.xp)||0,rank=String(p.rank||"Initiate"),completed=Array.isArray(p.completed_quests)?p.completed_quests.length:0,stage=Math.max(0,Math.min(4,Number(p.companion_stage)||0)),track=rankProgress(xp,rank);$("progress").innerHTML=`<div class="forge-stat"><strong>${escapeText(xp)} XP</strong><span>${track.remaining?`${escapeText(track.remaining)} XP to ${escapeText(track.next)}`:"Top rank reached"}</span><div class="xp-track" aria-label="Rank progress"><span class="xp-fill" style="width:${track.percent}%"></span></div></div><div class="forge-stat"><strong>${escapeText(rank)}</strong><span>Current rank</span></div><div class="forge-stat"><strong>${escapeText(completed)}</strong><span>Quests mastered</span></div>`;$("companion-name").textContent=COMPANION_STAGES[stage];$("companion-note").textContent=stage>=4?"Final Alpha stage reached.":`${Math.max(0,3-(completed%3))||3} mastered quest${Math.max(0,3-(completed%3))===1?"":"s"} to next evolution.`;$("companion-orb").className=`companion-orb stage-${stage}`;window.SadAvatar?.setCompanionStage(stage);document.querySelectorAll("#rank-path li").forEach(li=>{const liIndex=FORGE_RANKS.findIndex(([name])=>name===li.dataset.rank);const currentIndex=FORGE_RANKS.findIndex(([name])=>name===rank);li.classList.toggle("complete",liIndex<currentIndex);li.classList.toggle("current",liIndex===currentIndex)})}
 function resetHintLadder(){document.querySelectorAll("#hint-ladder li").forEach(li=>li.classList.remove("used","current"));$("hint-status").textContent="No hints used yet."}
 function markHintLevel(level){const index=HINT_LEVELS.indexOf(level);document.querySelectorAll("#hint-ladder li").forEach((li,i)=>{li.classList.toggle("used",i<index);li.classList.toggle("current",i===index)});$("hint-status").textContent=`Unlocked: ${level.replaceAll("_"," ")}.`}
+function renderLessonLibrary(){
+  const library=$("lesson-library");
+  if(!library)return;
+  library.replaceChildren(...STARTER_LESSONS.map((lesson,index)=>{
+    const button=document.createElement("button");button.type="button";button.className="starter-lesson";button.dataset.lesson=String(index);
+    const subject=document.createElement("small");subject.textContent=lesson.subject;
+    const title=document.createElement("strong");title.textContent=lesson.title;
+    const action=document.createElement("span");action.textContent="Load lesson →";
+    button.append(subject,title,action);return button;
+  }));
+  library.onclick=event=>{
+    const button=event.target.closest(".starter-lesson");if(!button)return;
+    const lesson=STARTER_LESSONS[Number(button.dataset.lesson)];if(!lesson)return;
+    const form=$("quest-form");form.elements.subject.value=lesson.subject;form.elements.learning_objective.value=lesson.objective;form.elements.assignment.value=lesson.assignment;
+    $("lesson-library-status").textContent=`${lesson.title} loaded. Review it, then create the quest.`;form.elements.assignment.focus();
+  };
+}
 
 $("quest-form").onsubmit=async e=>{e.preventDefault();try{currentQuest=await api("/v1/forge/quests",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});$("active-quest").hidden=false;$("quest-title").textContent=currentQuest.title;$("quest-subject").textContent=currentQuest.subject;$("quest-objective").textContent=`Objective: ${currentQuest.objective}`;$("boss-prompt").textContent=currentQuest.boss_check;const out=$("quest-output");out.hidden=false;out.textContent=currentQuest.challenges.join("\n\n");$("quest-actions").hidden=false;resetHintLadder();out.focus();message("Quest forged. Clear the challenge, then face the boss gate.")}catch(err){message(err.message,true)}};
 $("hint").onclick=async()=>{if(!currentQuest)return;try{const d=await api("/v1/forge/hint",{method:"POST",body:JSON.stringify({quest_id:currentQuest.quest_id})});markHintLevel(d.hint_level);message(`Hint unlocked: ${d.hint_level.replaceAll("_"," ")}.`)}catch(err){message(err.message,true)}};
@@ -44,4 +69,5 @@ $("refresh-mobile").onclick=loadMobileDevices;
 $("password-form").onsubmit=async e=>{e.preventDefault();try{await api("/v1/auth/password",{method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});e.target.reset();message("Password changed. Other sessions were signed out.")}catch(err){message(err.message,true)}};
 function escapeText(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function bootstrap(){if(window.SADMobile&&!window.SADMobile.ensurePaired())return;if(token){try{await enter()}catch(error){sessionStorage.removeItem("sad_token");token="";if(!window.SADMobile?.handleApiError?.(error.message))$("login-error").textContent="Please sign in again."}}}
+renderLessonLibrary();
 bootstrap();
