@@ -1,10 +1,21 @@
 sad.example.com {
     encode zstd gzip
+
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), geolocation=(), payment=(), usb=()"
     }
-    reverse_proxy 127.0.0.1:8765
+
+    # SAD itself remains loopback-only. Normalize browser security headers at the
+    # trusted reverse-proxy boundary so the backend never needs to trust a public
+    # Host header or bind directly to the Internet.
+    reverse_proxy 127.0.0.1:8765 {
+        header_up Host 127.0.0.1:8765
+        header_up Origin http://127.0.0.1:8765
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+    }
 }
