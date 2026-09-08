@@ -49,6 +49,17 @@ class AlphaProductTests(unittest.TestCase):
         with patch("builtins.input", side_effect=AssertionError("setup should not prompt")):
             self.assertIsNone(ensure_owner(self.auth))
 
+    def test_launcher_opens_the_browser_and_closes_cleanly(self):
+        server = unittest.mock.MagicMock()
+        server.server_port = 8765
+        server.serve_forever.side_effect = KeyboardInterrupt
+        with patch("alpha.AuthService", return_value=self.auth), patch("alpha.create_server", return_value=server), patch("alpha.threading.Timer") as timer:
+            from alpha import main
+            main()
+        timer.assert_called_once()
+        timer.return_value.start.assert_called_once()
+        server.server_close.assert_called_once()
+
     def test_alpha_setup_retries_password_and_accepts_lowercase_create(self):
         fresh = AuthService(Path(self.temp.name) / "fresh-accounts.json")
         with patch("builtins.input", side_effect=["kenneth.niko", "create"]), patch(
