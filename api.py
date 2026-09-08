@@ -4,6 +4,7 @@ from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler
 import json
 import mimetypes
+import os
 from pathlib import Path
 import re
 
@@ -11,11 +12,13 @@ from auth import AuthService, ROLE_PERMISSIONS
 from bounded_http import BoundedThreadingHTTPServer
 from browser_voice import browser_microphone_enabled, browser_permissions_policy
 from conversation import ConversationStore, generate_chat_reply
+from container_sandbox import DockerSandboxRunner, SandboxUnavailable
 from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from forge_worker import verify_approved_job
 from memory_store import MemoryStore
+from model_adapter import validated_local_model_url
 from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
 from platform_clients import PlatformClientStore
@@ -78,6 +81,43 @@ class SadApiService:
             self.last_event_error = None
         except (OSError, ValueError, json.JSONDecodeError) as error:
             self.last_event_error = str(error)
+
+    def _readiness(self):
+        """Return actionable runtime readiness without exposing secrets or running slow gates."""
+        model = os.getenv("SAD_LOCAL_MODEL", "").strip()
+        model_url = os.getenv("SAD_LOCAL_MODEL_URL", "").strip()
+        if model and model_url:
+            try:
+                validated_local_model_url(model_url)
+                model_item = {"status": "ready", "summary": "Local AI is configured on loopback."}
+            except ValueError as error:
+                model_item = {"status": "blocked", "summary": str(error)}
+        elif model or model_url:
+            model_item = {"status": "blocked", "summary": "Set both SAD_LOCAL_MODEL and SAD_LOCAL_MODEL_URL."}
+        else:
+            model_item = {"status": "setup_needed", "summary": "Chat uses built-in dialogue until a local model is configured."}
+
+        image = os.getenv("SAD_SANDBOX_IMAGE", "").strip()
+        try:
+            DockerSandboxRunner(image=image).preflight(Path(__file__).resolve().parent)
+            repair_item = {"status": "ready", "summary": "Forge repair isolation is ready."}
+        except (SandboxUnavailable, OSError) as error:
+            repair_item = {"status": "blocked", "summary": str(error)}
+
+        voice_status = self.voice.status()
+        voice_ready = bool(voice_status.get("stt_ready") and voice_status.get("tts_ready"))
+        return {
+            "overall": "ready" if repair_item["status"] == "ready" else "setup_needed",
+            "items": {
+                "core": {"status": "ready", "summary": "SAD and Forge core are running."},
+                "local_ai": model_item,
+                "repair_isolation": repair_item,
+                "voice": {
+                    "status": "ready" if voice_ready else "setup_needed",
+                    "summary": "Local speech services are ready." if voice_ready else "Voice remains text-only until local STT and TTS are configured.",
+                },
+            },
+        }
 
     def _machine_manifest(self, client):
         route_map = {
@@ -159,6 +199,9 @@ class SadApiService:
 
         if method == "GET" and path == "/v1/auth/me":
             return 200, {"account": account, "profile": self.auth.get_profile(token)}
+        if method == "GET" and path == "/v1/system/readiness":
+            self.auth.require(token, "account:manage")
+            return 200, self._readiness()
         if method == "POST" and path == "/v1/auth/logout":
             self.auth.logout(token)
             return 200, {"logged_out": True}
