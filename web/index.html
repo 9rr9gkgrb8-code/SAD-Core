@@ -131,6 +131,8 @@
       </section>
 
       <section id="settings" class="view card" hidden><p class="eyebrow">ACCOUNT SECURITY</p><h2 tabindex="-1">Change your password</h2><form id="password-form"><label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><label>New password<input name="new_password" type="password" autocomplete="new-password" minlength="12" required></label><button>Change password</button></form><button id="forget-device" class="secondary mobile-device-only" hidden>Forget this paired phone</button></section>
+
+      <section id="system" class="view card" hidden><p class="eyebrow">SYSTEM READINESS</p><h2 tabindex="-1">What works right now</h2><p class="muted">SAD reports missing setup plainly. A blocked optional feature does not mean your core data or account is broken.</p><button id="refresh-system" class="secondary">Check again</button><div id="system-output" class="readiness-grid" aria-live="polite"></div></section>
     </section>
   </main><script src="/ui/mobile.js" defer></script><script src="/ui/app.js" defer></script><script src="/ui/owner_dashboard.js" defer></script>
 </body></html>

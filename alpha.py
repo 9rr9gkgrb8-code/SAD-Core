@@ -1,6 +1,8 @@
 """Friendly local launcher for the SAD + Forge Alpha 1 browser application."""
 
 from getpass import getpass
+import threading
+import webbrowser
 
 from api import create_server
 from auth import AuthService
@@ -43,8 +45,11 @@ def main():
     if ensure_owner(auth) is False:
         return
     server = create_server(service=None)
-    print(f"SAD + Forge Alpha 1 is ready at http://127.0.0.1:{server.server_port}/")
+    url = f"http://127.0.0.1:{server.server_port}/"
+    print(f"SAD + Forge Alpha 1 is ready at {url}")
     print("Keep this window open while using the application. Press Ctrl+C to stop.")
+    print("Opening SAD in your default browser...")
+    threading.Timer(0.35, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
