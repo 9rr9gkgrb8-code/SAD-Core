@@ -35,6 +35,9 @@ python docker_proof.py
 ```
 
 Follow the startup output and documented local URL. Keep Core within its documented loopback/network boundary.
+The launcher opens the browser automatically. After signing in as Owner, open **System Status**
+to see whether Local AI, Forge repair isolation, and Voice need additional setup. SAD keeps the
+core usable while showing optional blockers in plain language.
 
 ## 4. Exercise SAD
 
