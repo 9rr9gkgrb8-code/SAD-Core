@@ -15,6 +15,7 @@ from developer_workspace import DeveloperWorkspaceStore, suggest_scope
 from failure_dashboard import DASHBOARD_STATE_FILE, FailureDashboard, FailureEvent
 from forge_student import Quest, complete_quest, homework_to_quest, next_hint
 from forge_worker import verify_approved_job
+from journey_observability import build_journey_snapshot
 from memory_store import MemoryStore
 from mobile_access import MobileAccessStore
 from personal_study import StudyAction, StudyRequest, build_study_plan
@@ -172,6 +173,9 @@ class SadApiService:
             return 200, {"capabilities": self.platform.catalog(permissions)}
         if method == "GET" and path == "/v1/platform/modules":
             return 200, {"modules": self.platform.visible_modules(permissions)}
+        if method == "GET" and path == "/v1/observability/journey":
+            self.auth.require(token, "development:view")
+            return 200, build_journey_snapshot(self.platform_events, self.dashboard)
         if method == "POST" and path == "/v1/platform/compatibility":
             return 200, self.platform.compatibility(body.get("requirements", []), self.platform.allowed_capability_ids(permissions))
         if method == "GET" and path == "/v1/platform/clients":
