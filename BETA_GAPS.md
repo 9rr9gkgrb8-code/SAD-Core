@@ -4,7 +4,7 @@ This is a launch tracker, not a completion claim.
 
 ## Blocking before public Beta
 
-- [ ] Integrate and verify the observable context-ladder change after its PR passes review/CI.
+- [x] Integrate and verify the observable context-ladder change after its PR passes review/CI.
 - [ ] Finish an automated review/policy gate without weakening human review/approval boundaries.
 - [ ] Capture real SAD Chat screenshot from a running build.
 - [ ] Capture real Owner/Developer dashboard screenshot from a running build.
@@ -17,7 +17,7 @@ This is a launch tracker, not a completion claim.
 
 ## Beta hardening / high priority
 
-- [ ] Add Beta-specific end-to-end regression coverage for the evaluator journey where it can be safely automated.
+- [x] Add Beta-specific end-to-end regression coverage for the safe automated evaluator journey, including privacy-minimized Owner observability.
 - [ ] Ensure dashboard presentation makes failure → suggestion → isolated repair → Owner decision easy to understand.
 - [ ] Verify Forge homework, progressive hints, mastery/check-work, XP/ranks/companion progression, and persistent progress as one coherent user journey.
 - [ ] Verify uncertainty/verification messaging for advanced tutoring paths.
