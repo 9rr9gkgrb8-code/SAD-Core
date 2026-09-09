@@ -200,7 +200,8 @@ BUILTIN_MODULES = (
         "development",
         (
             _cap("development:view", "Inspect development", "Inspect failures, jobs, and coding workspaces.", "development:view",
-                 (_route("GET", "/v1/dashboard"), _route("GET", "/v1/dev/workspaces"),
+                 (_route("GET", "/v1/dashboard"), _route("GET", "/v1/observability/journey"),
+                  _route("GET", "/v1/dev/workspaces"),
                   _route("GET", "/v1/dev/workspaces/{workspace_id}"))),
             _cap("development:work", "Prepare development", "Plan and execute isolated coding work.", "development:work",
                  (_route("POST", "/v1/dev/workspaces/scope"), _route("POST", "/v1/dev/workspaces"),
