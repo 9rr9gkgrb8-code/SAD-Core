@@ -1,6 +1,8 @@
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
-from mcp_tool_security import ToolAdmission, ToolUnavailable, RetryLedger, ReplayConflict
+from mcp_tool_security import ToolAdmission, ToolUnavailable, RetryLedger, DurableRetryLedger, ReplayConflict
 
 class McpToolSecurityTests(unittest.TestCase):
     def setUp(self):
@@ -41,6 +43,29 @@ class McpToolSecurityTests(unittest.TestCase):
             ledger.run_once(account_id="a", admission=admission, approval_id=None, execute=failed)
         with self.assertRaises(ReplayConflict):
             ledger.run_once(account_id="a", admission=admission, approval_id=None, execute=lambda: None)
+
+    def test_durable_replay_across_instances(self):
+        admission = self.admission.admit("public", {"x": 1}, set(), "persist-1")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "replay.sqlite3"
+            calls = []
+            def execute():
+                calls.append(1)
+                return {"ok": True}
+            self.assertEqual(DurableRetryLedger(path).run_once(account_id="a", admission=admission, approval_id="p", execute=execute), {"ok": True})
+            self.assertEqual(DurableRetryLedger(path).run_once(account_id="a", admission=admission, approval_id="p", execute=execute), {"ok": True})
+            self.assertEqual(len(calls), 1)
+
+    def test_durable_failure_blocks_retry_after_restart(self):
+        admission = self.admission.admit("public", {}, set(), "persist-2")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "replay.sqlite3"
+            def fail():
+                raise RuntimeError("uncertain side effect")
+            with self.assertRaises(RuntimeError):
+                DurableRetryLedger(path).run_once(account_id="a", admission=admission, approval_id=None, execute=fail)
+            with self.assertRaises(ReplayConflict):
+                DurableRetryLedger(path).run_once(account_id="a", admission=admission, approval_id=None, execute=lambda: None)
 
 if __name__ == "__main__":
     unittest.main()
