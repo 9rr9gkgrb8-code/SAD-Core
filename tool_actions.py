@@ -17,7 +17,7 @@ from pathlib import Path
 import threading
 import uuid
 
-from mcp_tool_security import ToolAdmission, ToolUnavailable
+from mcp_tool_security import ToolAdmission, ToolUnavailable, DurableRetryLedger, Admission
 
 from memory_store import MemoryStore
 from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
@@ -91,6 +91,7 @@ class ToolActionStore:
         self.platform = platform or PlatformRegistry()
         self.now = now or _now
         self.lock = threading.RLock()
+        self.replay = None
         self.database = None
         if path is None:
             migrate_legacy_private_store(TOOL_ACTION_FILE, LEGACY_TOOL_ACTION_FILE)
@@ -101,8 +102,10 @@ class ToolActionStore:
                     max_bytes=MAX_TOOL_ACTION_FILE_BYTES,
                 )
             self.path = self.database.path
+            self.replay = DurableRetryLedger(self.path)
         else:
             self.path = Path(path)
+            self.replay = DurableRetryLedger(self.path.with_suffix(".replay.sqlite3"))
 
     def _load(self):
         if self.database is not None:
@@ -218,6 +221,17 @@ class ToolActionStore:
             return self._public(action)
 
     def execute(self, account, permissions, action_id):
+        # The action ID is the stable replay key. A durable claim is made before
+        # invoking the business operation, including across worker restarts.
+        existing = self.get(account["account_id"], action_id)
+        admitted = TOOL_ADMISSION.admit(existing["tool_id"], existing["args"], permissions, action_id)
+        return self.replay.run_once(
+            account_id=account["account_id"], admission=admitted,
+            approval_id=existing.get("approved_args_sha256"),
+            execute=lambda: self._execute_claimed(account, permissions, action_id),
+        )
+
+    def _execute_claimed(self, account, permissions, action_id):
         account_id = account["account_id"]
         with self.lock:
             data = self._load()
