@@ -17,6 +17,8 @@ from pathlib import Path
 import threading
 import uuid
 
+from mcp_tool_security import ToolAdmission, ToolUnavailable
+
 from memory_store import MemoryStore
 from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
 from runtime_database import RuntimeDatabase
@@ -52,6 +54,7 @@ BUILTIN_TOOLS = (
     ToolSpec("memory.forget", "Forget memory", "Delete one owned memory by ID.", None, True, True),
 )
 TOOL_MAP = {tool.tool_id: tool for tool in BUILTIN_TOOLS}
+TOOL_ADMISSION = ToolAdmission(TOOL_MAP)
 
 
 def _now():
@@ -162,11 +165,10 @@ class ToolActionStore:
         )
 
     def create(self, account_id, permissions, tool_id, args):
+        # Resolve authorization before argument validation to avoid schema oracles.
         tool = TOOL_MAP.get(tool_id)
-        if not tool:
-            raise ValueError("Unknown tool action.")
-        if tool.permission and tool.permission not in set(permissions):
-            raise PermissionError("The signed-in role cannot use that tool.")
+        if tool is None or (tool.permission and tool.permission not in set(permissions)):
+            raise ToolUnavailable("Tool unavailable.")
         if not isinstance(args, dict):
             raise ValueError("Tool arguments must be an object.")
         _bounded_json(args, MAX_ARGS_BYTES, "Tool arguments")
@@ -228,6 +230,8 @@ class ToolActionStore:
                 raise PermissionError("Tool action integrity check failed.")
             if tool.permission and tool.permission not in set(permissions):
                 raise PermissionError("The signed-in role cannot use that tool.")
+            if action["state"] == "completed":
+                return self._public(action)  # Repeated execute for same action ID is a no-op.
             if action["state"] != "ready":
                 raise PermissionError("Tool action is not approved and ready.")
             if tool.approval_required and action.get("approved_args_sha256") != action.get("args_sha256"):
