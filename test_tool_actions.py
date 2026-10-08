@@ -20,6 +20,32 @@ class ToolActionTests(unittest.TestCase):
         self.account = {"account_id": "a", "role": "student"}
         self.permissions = {"study:personal", "forge:play", "progress:own"}
 
+    def test_mutation_reservation_survives_store_restart(self):
+        args = {"category": "goal", "title": "Once", "content": "Only once"}
+        action = self.store.create("a", self.permissions, "memory.remember", args)
+        self.store.decide("a", action["action_id"], "approve")
+        self.store.execute(self.account, self.permissions, action["action_id"])
+        restarted = ToolActionStore(
+            Path(self.temp.name) / "tool_actions.json",
+            memory=self.memory, platform=PlatformRegistry(),
+        )
+        with self.assertRaises(PermissionError):
+            restarted.execute(self.account, self.permissions, action["action_id"])
+        self.assertEqual(len(self.memory.list("a")), 1)
+
+    def test_reservation_prevents_replay_of_ready_action(self):
+        args = {"category": "goal", "title": "Once", "content": "Only once"}
+        action = self.store.create("a", self.permissions, "memory.remember", args)
+        self.store.decide("a", action["action_id"], "approve")
+        self.store.execute(self.account, self.permissions, action["action_id"])
+        # Simulate stale action state from a competing process.
+        data = self.store._load()
+        data["actions"][action["action_id"]]["state"] = "ready"
+        self.store._save(data)
+        with self.assertRaises(Exception):
+            self.store.execute(self.account, self.permissions, action["action_id"])
+        self.assertEqual(len(self.memory.list("a")), 1)
+
     def test_read_only_tool_is_ready_and_executes(self):
         action = self.store.create("a", self.permissions, "platform.status", {})
         self.assertEqual(action["state"], "ready")
