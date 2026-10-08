@@ -39,6 +39,9 @@ class ToolActionTests(unittest.TestCase):
         completed = self.store.execute(self.account, self.permissions, action["action_id"])
         self.assertEqual(completed["state"], "completed")
         self.assertEqual(self.memory.list("a")[0]["content"], "Ship Tier 3")
+        repeated = self.store.execute(self.account, self.permissions, action["action_id"])
+        self.assertEqual(repeated["output"], completed["output"])
+        self.assertEqual(len(self.memory.list("a")), 1)
 
     def test_rejection_and_cross_account_access_fail_closed(self):
         action = self.store.create("a", self.permissions, "memory.remember", {
@@ -54,7 +57,7 @@ class ToolActionTests(unittest.TestCase):
             self.store.decide("b", action["action_id"], "approve")
 
     def test_unknown_tool_and_bad_arguments_are_rejected(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(PermissionError):
             self.store.create("a", self.permissions, "shell.run", {})
         with self.assertRaises(ValueError):
             self.store.create("a", self.permissions, "memory.search", "not-an-object")

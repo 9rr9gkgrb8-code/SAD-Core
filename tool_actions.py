@@ -17,6 +17,8 @@ from pathlib import Path
 import threading
 import uuid
 
+from mcp_tool_security import ToolAdmission, ToolUnavailable, DurableRetryLedger, Admission
+
 from memory_store import MemoryStore
 from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
 from runtime_database import RuntimeDatabase
@@ -52,6 +54,7 @@ BUILTIN_TOOLS = (
     ToolSpec("memory.forget", "Forget memory", "Delete one owned memory by ID.", None, True, True),
 )
 TOOL_MAP = {tool.tool_id: tool for tool in BUILTIN_TOOLS}
+TOOL_ADMISSION = ToolAdmission(TOOL_MAP)
 
 
 def _now():
@@ -88,6 +91,7 @@ class ToolActionStore:
         self.platform = platform or PlatformRegistry()
         self.now = now or _now
         self.lock = threading.RLock()
+        self.replay = None
         self.database = None
         if path is None:
             migrate_legacy_private_store(TOOL_ACTION_FILE, LEGACY_TOOL_ACTION_FILE)
@@ -98,8 +102,10 @@ class ToolActionStore:
                     max_bytes=MAX_TOOL_ACTION_FILE_BYTES,
                 )
             self.path = self.database.path
+            self.replay = DurableRetryLedger(self.path)
         else:
             self.path = Path(path)
+            self.replay = DurableRetryLedger(self.path.with_suffix(".replay.sqlite3"))
 
     def _load(self):
         if self.database is not None:
@@ -162,11 +168,10 @@ class ToolActionStore:
         )
 
     def create(self, account_id, permissions, tool_id, args):
+        # Resolve authorization before argument validation to avoid schema oracles.
         tool = TOOL_MAP.get(tool_id)
-        if not tool:
-            raise ValueError("Unknown tool action.")
-        if tool.permission and tool.permission not in set(permissions):
-            raise PermissionError("The signed-in role cannot use that tool.")
+        if tool is None or (tool.permission and tool.permission not in set(permissions)):
+            raise ToolUnavailable("Tool unavailable.")
         if not isinstance(args, dict):
             raise ValueError("Tool arguments must be an object.")
         _bounded_json(args, MAX_ARGS_BYTES, "Tool arguments")
@@ -216,6 +221,21 @@ class ToolActionStore:
             return self._public(action)
 
     def execute(self, account, permissions, action_id):
+        # The action ID is the stable replay key. A durable claim is made before
+        # invoking the business operation, including across worker restarts.
+        existing = self.get(account["account_id"], action_id)
+        admitted = TOOL_ADMISSION.admit(existing["tool_id"], existing["args"], permissions, action_id)
+        if existing["state"] not in {"ready", "completed"}:
+            raise PermissionError("Tool action is not approved and ready.")
+        if existing["approval_required"] and existing.get("approved_args_sha256") != existing.get("args_sha256"):
+            raise PermissionError("Approved tool arguments no longer match execution arguments.")
+        return self.replay.run_once(
+            account_id=account["account_id"], admission=admitted,
+            approval_id=existing.get("approved_args_sha256"),
+            execute=lambda: self._execute_claimed(account, permissions, action_id),
+        )
+
+    def _execute_claimed(self, account, permissions, action_id):
         account_id = account["account_id"]
         with self.lock:
             data = self._load()
@@ -228,6 +248,8 @@ class ToolActionStore:
                 raise PermissionError("Tool action integrity check failed.")
             if tool.permission and tool.permission not in set(permissions):
                 raise PermissionError("The signed-in role cannot use that tool.")
+            if action["state"] == "completed":
+                return self._public(action)  # Repeated execute for same action ID is a no-op.
             if action["state"] != "ready":
                 raise PermissionError("Tool action is not approved and ready.")
             if tool.approval_required and action.get("approved_args_sha256") != action.get("args_sha256"):
