@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Callable, Any
 import hashlib
 import json
+import sqlite3
+from pathlib import Path
 
 
 class MCPAuthorizationError(PermissionError):
@@ -57,3 +59,34 @@ class GovernedMCPDispatcher:
             if not self.reserve_once(operation_key):
                 raise MCPDuplicateOperationError("Duplicate or ambiguous operation")
         return execute()
+
+class SQLiteOperationReservations:
+    """Crash-durable, cross-process at-most-once reservation.
+
+    An interrupted execution remains reserved. Never automatically retry it:
+    external effects cannot generally be rolled back or reliably detected.
+    """
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS mcp_operation_reservations
+                       (operation_key TEXT PRIMARY KEY, reserved_at TEXT NOT NULL
+                        DEFAULT CURRENT_TIMESTAMP)""")
+
+    def _connect(self):
+        db = sqlite3.connect(str(self.path), timeout=30, isolation_level=None)
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA synchronous=FULL")
+        return db
+
+    def __call__(self, operation_key):
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            cursor = db.execute(
+                "INSERT OR IGNORE INTO mcp_operation_reservations (operation_key) VALUES (?)",
+                (operation_key,),
+            )
+            db.commit()
+            return cursor.rowcount == 1
