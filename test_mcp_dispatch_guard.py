@@ -1,7 +1,9 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 from mcp_dispatch_guard import (
-    GovernedMCPDispatcher, MCPGrant, MCPAuthorizationError,
+    GovernedMCPDispatcher, MCPGrant, SQLiteOperationReservations, MCPAuthorizationError,
     MCPDuplicateOperationError, argument_digest,
 )
 
@@ -65,6 +67,15 @@ class MCPDispatchGateTests(unittest.TestCase):
         with self.assertRaises(MCPDuplicateOperationError):
             self.call()
         self.assertEqual(self.effects, 1)
+
+    def test_reservation_persists_across_instances(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ledger.sqlite3"
+            first = SQLiteOperationReservations(path)
+            self.assertTrue(first("key-1"))
+            second = SQLiteOperationReservations(path)
+            self.assertFalse(second("key-1"))
+            self.assertTrue(second("key-2"))
 
     def test_unapproved_grant_rejected(self):
         grant = MCPGrant("owner", "repair", argument_digest(self.args), "approval-1", False)
