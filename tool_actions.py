@@ -17,6 +17,7 @@ from pathlib import Path
 import threading
 import uuid
 
+from mcp_dispatch_guard import GovernedMCPDispatcher, MCPGrant, SQLiteOperationReservations
 from memory_store import MemoryStore
 from platform_registry import PLATFORM_SCHEMA_VERSION, PLATFORM_VERSION, PlatformRegistry
 from runtime_database import RuntimeDatabase
@@ -100,6 +101,10 @@ class ToolActionStore:
             self.path = self.database.path
         else:
             self.path = Path(path)
+        # Separate SQLite ledger so the reservation is committed before side effects.
+        self.operation_reservations = SQLiteOperationReservations(
+            self.path.with_name(self.path.name + ".mcp-reservations.sqlite3")
+        )
 
     def _load(self):
         if self.database is not None:
@@ -236,12 +241,36 @@ class ToolActionStore:
                 self._save(data)
                 raise PermissionError("Approved tool arguments no longer match execution arguments.")
             try:
-                output = self._run(tool.tool_id, account, permissions, action["args"])
+                # Discovery visibility never grants execution authority. The grant
+                # is constructed only after trusted ownership, permission, state,
+                # integrity and exact-argument checks above have succeeded.
+                grant = MCPGrant(
+                    principal=account_id, tool=tool.tool_id,
+                    argument_digest=action["args_sha256"],
+                    approval_id=action["action_id"], authorized=True,
+                )
+                dispatcher = GovernedMCPDispatcher(
+                    check_grant=lambda g: (
+                        g.principal == account_id
+                        and g.approval_id == action["action_id"]
+                        and action["state"] == "ready"
+                        and (not tool.approval_required or
+                             (action["decision"] == "approve" and
+                              action["approved_args_sha256"] == action["args_sha256"]))
+                    ),
+                    reserve_once=self.operation_reservations,
+                )
+                output = dispatcher.call(
+                    principal=account_id, tool=tool.tool_id,
+                    arguments=action["args"], grant=grant,
+                    execute=lambda: self._run(tool.tool_id, account, permissions, action["args"]),
+                    mutating=tool.mutates_state,
+                )
                 _bounded_json(output, MAX_OUTPUT_BYTES, "Tool output")
                 action["output"] = output
                 action["state"] = "completed"
                 action["error"] = None
-            except (ValueError, KeyError, PermissionError) as error:
+            except Exception as error:
                 action["state"] = "failed"
                 action["error"] = str(error)
                 action["output"] = None
