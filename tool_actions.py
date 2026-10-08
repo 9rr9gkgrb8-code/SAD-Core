@@ -225,6 +225,10 @@ class ToolActionStore:
         # invoking the business operation, including across worker restarts.
         existing = self.get(account["account_id"], action_id)
         admitted = TOOL_ADMISSION.admit(existing["tool_id"], existing["args"], permissions, action_id)
+        if existing["state"] not in {"ready", "completed"}:
+            raise PermissionError("Tool action is not approved and ready.")
+        if existing["approval_required"] and existing.get("approved_args_sha256") != existing.get("args_sha256"):
+            raise PermissionError("Approved tool arguments no longer match execution arguments.")
         return self.replay.run_once(
             account_id=account["account_id"], admission=admitted,
             approval_id=existing.get("approved_args_sha256"),
