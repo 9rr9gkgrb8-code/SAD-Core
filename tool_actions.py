@@ -9,6 +9,7 @@ may still use the legacy JSON document format.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -60,7 +61,7 @@ def _now():
 
 def _canonical_json(value):
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     except (TypeError, ValueError) as error:
         raise ValueError("Value must be JSON serializable.") from error
 
@@ -150,7 +151,7 @@ class ToolActionStore:
 
     @staticmethod
     def _public(action):
-        return {key: value for key, value in action.items() if key != "account_id"}
+        return deepcopy({key: value for key, value in action.items() if key != "account_id"})
 
     @staticmethod
     def _integrity_matches(action, tool):
@@ -170,6 +171,7 @@ class ToolActionStore:
         if not isinstance(args, dict):
             raise ValueError("Tool arguments must be an object.")
         _bounded_json(args, MAX_ARGS_BYTES, "Tool arguments")
+        args = deepcopy(args)
         timestamp = self.now().isoformat()
         action = {
             "action_id": str(uuid.uuid4()), "account_id": account_id, "tool_id": tool_id,
@@ -235,6 +237,13 @@ class ToolActionStore:
                 action["updated_at"] = self.now().isoformat()
                 self._save(data)
                 raise PermissionError("Approved tool arguments no longer match execution arguments.")
+            # Persist before dispatch. An interrupted action stays blocked on restart:
+            # the effect may have happened, so blindly retrying is unsafe.
+            # This store lock serializes one instance only; cross-process atomic
+            # reservation remains a separate requirement for shared deployments.
+            action["state"] = "executing"
+            action["updated_at"] = self.now().isoformat()
+            self._save(data)
             try:
                 output = self._run(tool.tool_id, account, permissions, action["args"])
                 _bounded_json(output, MAX_OUTPUT_BYTES, "Tool output")
